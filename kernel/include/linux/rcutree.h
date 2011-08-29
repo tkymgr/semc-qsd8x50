@@ -166,6 +166,15 @@ struct rcu_data {
 	long n_rcu_pending;		/* rcu_pending() calls since boot. */
 	long n_rcu_pending_force_qs;	/* when to force quiescent states. */
 
+	/* 6) __rcu_pending() statistics. */
+	long n_rp_qs_pending;
+	long n_rp_cb_ready;
+	long n_rp_cpu_needs_gp;
+	long n_rp_gp_completed;
+	long n_rp_gp_started;
+	long n_rp_need_fqs;
+	long n_rp_need_nothing;
+
 	int cpu;
 };
 
