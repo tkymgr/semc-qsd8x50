@@ -242,7 +242,7 @@ menu "RCU Subsystem"
 
 choice
 	prompt "RCU Implementation"
-	default CLASSIC_RCU
+	default TREE_RCU
 
 config CLASSIC_RCU
 	bool "Classic RCU"
@@ -270,6 +270,13 @@ config PREEMPT_RCU
 	  preemptible. This helps latency, but may expose bugs due to
 	  now-naive assumptions about each RCU read-side critical section
 	  remaining on a given CPU through its execution.
+
+config TINY_RCU
+	bool "Tiny-Memory RCU"
+	depends on !SMP && EMBEDDED
+	help
+	  This option greatly reduces the memory footprint of RCU,
+	  but is usable only on UP systems.
 
 endchoice
 

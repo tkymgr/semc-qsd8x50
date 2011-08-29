@@ -1,3 +1,5 @@
+#!/bin/sh
+
 TARGET=$1
 ARCH=$2
 SMP=$3
@@ -43,10 +45,11 @@ else
 	TIMESTAMP=$SEMC_BUILD_TIMESTAMP
 fi
 
+UTS_VERSION="#$VERSION"
 CONFIG_FLAGS=""
 if [ -n "$SMP" ] ; then CONFIG_FLAGS="SMP"; fi
 if [ -n "$PREEMPT" ] ; then CONFIG_FLAGS="$CONFIG_FLAGS PREEMPT"; fi
-UTS_VERSION="#1 $CONFIG_FLAGS $TIMESTAMP"
+UTS_VERSION="$UTS_VERSION $CONFIG_FLAGS $TIMESTAMP"
 
 # Truncate to maximum length
 
@@ -63,8 +66,8 @@ UTS_TRUNCATE="sed -e s/\(.\{1,$UTS_LEN\}\).*/\1/"
   echo \#define UTS_VERSION \"`echo $UTS_VERSION | $UTS_TRUNCATE`\"
 
   echo \#define LINUX_COMPILE_TIME \"`date --date="$TIMESTAMP" +%R:%S`\"
-  echo \#define LINUX_COMPILE_BY \"SEMCUser\"
-  echo \#define LINUX_COMPILE_HOST \"SEMCHost\"
+  echo \#define LINUX_COMPILE_BY \"Goro\"
+  echo \#define LINUX_COMPILE_HOST \"Tsukiyama\"
 
   if [ -x /bin/dnsdomainname ]; then
     echo \#define LINUX_COMPILE_DOMAIN \"`dnsdomainname | $UTS_TRUNCATE`\"
