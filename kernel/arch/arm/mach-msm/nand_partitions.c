@@ -114,6 +114,66 @@ struct flash_partition_table {
 	struct flash_partition_entry part_entry[16];
 };
 
+static struct mtd_partition nand_partitions[] = {
+        {
+                .name           = "appslog",
+                .size           = 0x00000044 >> 1,
+                .offset         = 0x00003fbc >> 1,
+        }, {
+                .name           = "cache",
+                .size           = 0x000006f4 >> 1,
+                .offset         = 0x000038c8 >> 1,
+        }, {
+                .name           = "system",
+                .size           = 0x0000160a >> 1,
+                .offset         = 0x000005ae >> 1,
+        }, {
+                .name           = "userdata",
+                .size           = 0x00001d10 >> 1,
+                .offset         = 0x00001bb8 >> 1,
+        }, {
+                .name           = "bootloader",
+                .size           = 0x00000016,
+                .offset         = 0,
+                .mask_flags     = MTD_WRITEABLE,  /* force read-only */
+        }, {
+                .name           = "amss",
+                .size           = 0x000000bf,
+                .offset         = 0x00000016,
+                .mask_flags     = MTD_WRITEABLE,  /* force read-only */
+        }, {
+                .name           = "amss_fs",
+                .size           = 0x00000058,
+                .offset         = 0x000000d5,
+                .mask_flags     = MTD_WRITEABLE,  /* force read-only */
+        }, {
+                .name           = "fota0",
+                .size           = 0x00000022,
+                .offset         = 0x0000012d,
+                .mask_flags     = MTD_WRITEABLE,  /* force read-only */
+        }, {
+                .name           = "fota1",
+                .size           = 0x00000022,
+                .offset         = 0x0000014f,
+                .mask_flags     = MTD_WRITEABLE,  /* force read-only */
+        }, {
+                .name           = "recovery",
+                .size           = 0x00000062,
+                .offset         = 0x00000171,
+                .mask_flags     = MTD_WRITEABLE,  /* force read-only */
+        }, {
+                .name           = "dsp1",
+                .size           = 0x000000a2,
+                .offset         = 0x000001d3,
+                .mask_flags     = MTD_WRITEABLE,  /* force read-only */
+        }, {
+                .name           = "boot",
+                .size           = 0x00000062,
+                .offset         = 0x00000275,
+                .mask_flags     = MTD_WRITEABLE,  /* force read-only */
+        }
+};
+
 static int get_nand_partitions(void)
 {
 	struct flash_partition_table *partition_table;
@@ -132,7 +192,10 @@ static int get_nand_partitions(void)
 	if (!partition_table) {
 		printk(KERN_WARNING "%s: no flash partition table in shared "
 		       "memory\n", __func__);
-		return -ENOENT;
+		msm_nand_data.nr_parts = ARRAY_SIZE(nand_partitions);
+		msm_nand_data.parts = nand_partitions;
+		return 0;
+		//return -ENOENT;
 	}
 
 	if ((partition_table->magic1 != (u32) FLASH_PART_MAGIC1) ||
