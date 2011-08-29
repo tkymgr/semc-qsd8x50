@@ -14,7 +14,8 @@
 #
 ifndef PDIR
 
-SUBDIRS = target host
+#SUBDIRS = target host
+SUBDIRS = host
 
 endif
 
