@@ -294,6 +294,7 @@ static void armv7_pmnc_reset_counter(unsigned int cnt)
 int armv7_setup_pmnc(void)
 {
 	unsigned int cnt;
+#if defined(CONFIG_ARCH_QSD8X50) || defined(CONFIG_ARCH_MSM7X30)
 	u32 val = 0;
 	u32 gr;
 	u32 lpm2val, lpm0val;
@@ -303,6 +304,7 @@ int armv7_setup_pmnc(void)
 	lpm0val = 0;
 	lpm1val = 0;
 	l2pmval = 0;
+#endif
 
 	if (armv7_pmnc_read() & PMNC_E) {
 		printk(KERN_ERR "oprofile: CPU%u PMNC still enabled when setup"
@@ -382,6 +384,7 @@ int armv7_setup_pmnc(void)
 		 * Enable interrupt for this counter
 		 */
 		armv7_pmnc_enable_intens(cnt);
+
 		/*
 		 * Reset counter
 		 */
@@ -533,7 +536,6 @@ static int irqs[] = {
 #ifdef CONFIG_ARCH_MSM7X30
 	INT_ARM11_PM,
 #endif
-
 };
 
 static void armv7_pmnc_stop(void)

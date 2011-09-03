@@ -15,6 +15,8 @@
 #ifndef _LINUX_WIFI_TIWLAN_H_
 #define _LINUX_WIFI_TIWLAN_H_
 
+#include <linux/wlan_plat.h>
+
 #define WMPA_NUMBER_OF_SECTIONS	3
 #define WMPA_NUMBER_OF_BUFFERS	160
 #define WMPA_SECTION_HEADER	24
@@ -27,6 +29,7 @@ struct wifi_platform_data {
         int (*set_reset)(int val);
         int (*set_carddetect)(int val);
 	void *(*mem_prealloc)(int section, unsigned long size);
+	u8 mac_addr[6];
 };
 
 #endif

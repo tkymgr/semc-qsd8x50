@@ -1,6 +1,6 @@
 /* linux/arch/arm/mach-msm/last_amsslog.c
  *
- * Copyright (C) 2010 Sony Ericsson Mobile Communications AB. All Rights Reserved.
+ * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
  * Author: Christian Lindeberg <christian.lindeberg@sonyericsson.com>
  *
@@ -12,6 +12,7 @@
 
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
+#include <linux/module.h>
 #include "smd_private.h"
 
 #define LOG_SIZE_MAX 4096
@@ -36,7 +37,7 @@ static ssize_t last_amsslog_read(struct file *file, char __user *buf,
 	return count;
 }
 
-static struct file_operations last_amsslog_file_ops = {
+static const struct file_operations last_amsslog_file_ops = {
 	.read = last_amsslog_read,
 };
 
@@ -83,5 +84,9 @@ static int last_amsslog_init(void)
 	create_last_amsslog_proc_entry();
 	return 0;
 }
+
+MODULE_AUTHOR("Christian Lindeberg christian.lindeberg@sonyericsson.com");
+MODULE_DESCRIPTION("AMSS error log");
+MODULE_LICENSE("GPL");
 
 module_init(last_amsslog_init);

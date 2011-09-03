@@ -46,6 +46,14 @@
 # define MULTI_CACHE 1
 #endif
 
+#if defined(CONFIG_CPU_FA526)
+# ifdef _CACHE
+#  define MULTI_CACHE 1
+# else
+#  define _CACHE fa
+# endif
+#endif
+
 #if defined(CONFIG_CPU_ARM926T)
 # ifdef _CACHE
 #  define MULTI_CACHE 1
@@ -91,6 +99,14 @@
 #  define MULTI_CACHE 1
 # else
 #  define _CACHE xsc3
+# endif
+#endif
+
+#if defined(CONFIG_CPU_MOHAWK)
+# ifdef _CACHE
+#  define MULTI_CACHE 1
+# else
+#  define _CACHE mohawk
 # endif
 #endif
 
@@ -398,9 +414,14 @@ extern void __flush_dcache_page(struct address_space *mapping, struct page *page
 
 static inline void __flush_icache_all(void)
 {
+#ifdef CONFIG_ARM_ERRATA_411920
+	extern void v6_icache_inval_all(void);
+	v6_icache_inval_all();
+#else
 	asm("mcr	p15, 0, %0, c7, c5, 0	@ invalidate I-cache\n"
 	    :
 	    : "r" (0));
+#endif
 }
 
 #define ARCH_HAS_FLUSH_ANON_PAGE

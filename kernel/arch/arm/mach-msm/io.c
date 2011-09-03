@@ -3,7 +3,7 @@
  * MSM7K, QSD io support
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2008-2009, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2008-2010, Code Aurora Forum. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -122,6 +122,40 @@ void __init msm_map_qsd8x50_io(void)
 	msm_map_io(qsd8x50_io_desc, ARRAY_SIZE(qsd8x50_io_desc));
 }
 #endif /* CONFIG_ARCH_QSD8X50 */
+
+#ifdef CONFIG_ARCH_MSM8X60
+static struct map_desc msm8x60_io_desc[] __initdata = {
+	MSM_DEVICE(QGIC_DIST),
+	MSM_DEVICE(QGIC_CPU),
+	MSM_DEVICE(TMR),
+	MSM_DEVICE(RPM_MPM),
+	MSM_DEVICE(ACC),
+	MSM_DEVICE(ACC0),
+	MSM_DEVICE(ACC1),
+	MSM_DEVICE(SAW0),
+	MSM_DEVICE(SAW1),
+	MSM_DEVICE(GCC),
+	MSM_DEVICE(TLMM),
+	MSM_DEVICE(DMOV_ADM0),
+	MSM_DEVICE(DMOV_ADM1),
+	MSM_DEVICE(SCPLL),
+	MSM_DEVICE(RPM),
+	MSM_DEVICE(CLK_CTL),
+	MSM_DEVICE(MMSS_CLK_CTL),
+	MSM_DEVICE(LPASS_CLK_CTL),
+	MSM_DEVICE(SIC_NON_SECURE),
+	{
+		.virtual =  (unsigned long) MSM_SHARED_RAM_BASE,
+		.length =   MSM_SHARED_RAM_SIZE,
+		.type =     MT_DEVICE,
+	},
+};
+
+void __init msm_map_msm8x60_io(void)
+{
+	msm_map_io(msm8x60_io_desc, ARRAY_SIZE(msm8x60_io_desc));
+}
+#endif /* CONFIG_ARCH_MSM8X60 */
 
 #ifdef CONFIG_ARCH_MSM7X30
 static struct map_desc msm7x30_io_desc[] __initdata = {

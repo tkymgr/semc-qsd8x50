@@ -98,6 +98,92 @@ static long hw3d_wait_for_interrupt(void)
 }
 
 #define HW3D_REGS_LEN 0x100000
+static long hw3d_wait_for_revoke(struct hw3d_info *info, struct file *filp)
+{
+	struct hw3d_data *data = filp->private_data;
+	int ret;
+
+	if (is_master(info, filp)) {
+		pr_err("%s: cannot revoke on master node\n", __func__);
+		return -EPERM;
+	}
+
+	ret = wait_event_interruptible(info->revoke_wq,
+				       info->revoking ||
+				       data->closing);
+	if (ret == 0 && data->closing)
+		ret = -EPIPE;
+	if (ret < 0)
+		return ret;
+	return 0;
+}
+
+static void locked_hw3d_client_done(struct hw3d_info *info, int had_timer)
+{
+	if (info->enabled) {
+		pr_debug("hw3d: was enabled\n");
+		info->enabled = 0;
+		clk_disable(info->grp_clk);
+		clk_disable(info->imem_clk);
+	}
+	info->revoking = 0;
+
+	/* double check that the irqs are disabled */
+	locked_hw3d_irq_disable(info);
+
+	if (had_timer)
+		wake_unlock(&info->wake_lock);
+	wake_up(&info->revoke_done_wq);
+}
+
+static void do_force_revoke(struct hw3d_info *info)
+{
+	unsigned long flags;
+
+	/* at this point, the task had a chance to relinquish the gpu, but
+	 * it hasn't. So, we kill it */
+	spin_lock_irqsave(&info->lock, flags);
+	pr_debug("hw3d: forcing revoke\n");
+	locked_hw3d_irq_disable(info);
+	if (info->client_task) {
+		pr_info("hw3d: force revoke from pid=%d\n",
+			info->client_task->pid);
+		force_sig(SIGKILL, info->client_task);
+		put_task_struct(info->client_task);
+		info->client_task = NULL;
+	}
+	locked_hw3d_client_done(info, 1);
+	pr_debug("hw3d: done forcing revoke\n");
+	spin_unlock_irqrestore(&info->lock, flags);
+}
+
+#define REVOKE_TIMEOUT		(2 * HZ)
+static void locked_hw3d_revoke(struct hw3d_info *info)
+{
+	/* force us to wait to suspend until the revoke is done. If the
+	 * user doesn't release the gpu, the timer will turn off the gpu,
+	 * and force kill the process. */
+	wake_lock(&info->wake_lock);
+	info->revoking = 1;
+	wake_up(&info->revoke_wq);
+	mod_timer(&info->revoke_timer, jiffies + REVOKE_TIMEOUT);
+}
+
+bool is_msm_hw3d_file(struct file *file)
+{
+	struct hw3d_info *info = hw3d_info;
+	if (MAJOR(file->f_dentry->d_inode->i_rdev) == MAJOR(info->devno) &&
+	    (is_master(info, file) || is_client(info, file)))
+		return 1;
+	return 0;
+}
+
+void put_msm_hw3d_file(struct file *file)
+{
+	if (!is_msm_hw3d_file(file))
+		return;
+	fput(file);
+}
 
 static long hw3d_revoke_gpu(struct file *file)
 {
@@ -106,9 +192,8 @@ static long hw3d_revoke_gpu(struct file *file)
 	struct pmem_region region = {.offset = 0x0, .len = HW3D_REGS_LEN};
 
 	down(&hw3d_sem);
-	if (!hw3d_granted) {
+	if (!hw3d_granted)
 		goto end;
-	}
 	/* revoke the pmem region completely */
 	if ((ret = pmem_remap(&region, file, PMEM_UNMAP)))
 		goto end;
@@ -156,6 +241,115 @@ static int hw3d_release(struct inode *inode, struct file *file)
 	}
 	up(&hw3d_sem);
 	return 0;
+}
+
+static void hw3d_vma_open(struct vm_area_struct *vma)
+{
+	/* XXX: should the master be allowed to fork and keep the mappings? */
+
+	/* TODO: remap garbage page into here.
+	 *
+	 * For now, just pull the mapping. The user shouldn't be forking
+	 * and using it anyway. */
+	zap_page_range(vma, vma->vm_start, vma->vm_end - vma->vm_start, NULL);
+}
+
+static void hw3d_vma_close(struct vm_area_struct *vma)
+{
+	struct file *file = vma->vm_file;
+	struct hw3d_data *data = file->private_data;
+	int i;
+
+	pr_debug("hw3d: current %u ppid %u file %p count %ld\n",
+		 current->pid, current->parent->pid, file, file_count(file));
+
+	BUG_ON(!data);
+
+	mutex_lock(&data->mutex);
+	for (i = 0; i < HW3D_NUM_REGIONS; ++i) {
+		if (data->vmas[i] == vma) {
+			data->vmas[i] = NULL;
+			goto done;
+		}
+	}
+	pr_warning("%s: vma %p not of ours during vma_close\n", __func__, vma);
+done:
+	mutex_unlock(&data->mutex);
+}
+
+static int hw3d_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	struct hw3d_info *info = hw3d_info;
+	struct hw3d_data *data = file->private_data;
+	unsigned long vma_size = vma->vm_end - vma->vm_start;
+	int ret = 0;
+	int region = REGION_PAGE_ID(vma->vm_pgoff);
+
+	if (region >= HW3D_NUM_REGIONS) {
+		pr_err("%s: Trying to mmap unknown region %d\n", __func__,
+		       region);
+		return -EINVAL;
+	} else if (vma_size > info->regions[region].size) {
+		pr_err("%s: VMA size %ld exceeds region %d size %ld\n",
+			__func__, vma_size, region,
+			info->regions[region].size);
+		return -EINVAL;
+	} else if (REGION_PAGE_OFFS(vma->vm_pgoff) != 0 ||
+		   (vma_size & ~PAGE_MASK)) {
+		pr_err("%s: Can't remap part of the region %d\n", __func__,
+		       region);
+		return -EINVAL;
+	} else if (!is_master(info, file) &&
+		   current->group_leader != info->client_task) {
+		pr_err("%s: current(%d) != client_task(%d)\n", __func__,
+		       current->group_leader->pid, info->client_task->pid);
+		return -EPERM;
+	} else if (!is_master(info, file) &&
+		   (info->revoking || info->suspending)) {
+		pr_err("%s: cannot mmap while revoking(%d) or suspending(%d)\n",
+		       __func__, info->revoking, info->suspending);
+		return -EPERM;
+	}
+
+	mutex_lock(&data->mutex);
+	if (data->vmas[region] != NULL) {
+		pr_err("%s: Region %d already mapped (pid=%d tid=%d)\n",
+		       __func__, region, current->group_leader->pid,
+		       current->pid);
+		ret = -EBUSY;
+		goto done;
+	}
+
+	/* our mappings are always noncached */
+#ifdef pgprot_noncached
+	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+#endif
+
+	ret = io_remap_pfn_range(vma, vma->vm_start,
+				 info->regions[region].pbase >> PAGE_SHIFT,
+				 vma_size, vma->vm_page_prot);
+	if (ret) {
+		pr_err("%s: Cannot remap page range for region %d!\n", __func__,
+		       region);
+		ret = -EAGAIN;
+		goto done;
+	}
+
+	/* Prevent a malicious client from stealing another client's data
+	 * by forcing a revoke on it and then mmapping the GPU buffers.
+	 */
+	if (region != HW3D_REGS)
+		memset(info->regions[region].vbase, 0,
+		       info->regions[region].size);
+
+	vma->vm_ops = &hw3d_vm_ops;
+
+	/* mark this region as mapped */
+	data->vmas[region] = vma;
+
+done:
+	mutex_unlock(&data->mutex);
+	return ret;
 }
 
 static long hw3d_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
