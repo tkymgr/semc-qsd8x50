@@ -261,6 +261,13 @@ config MACH_QSD8X55_FFA
        help
          Support for the Qualcomm QSD8x55 FFA eval board.
 
+config QSD8X50_OVERCLOCK
+	depends on ARCH_QSD8X50
+	default n
+	bool "QSD8X50_OVERCLOCK"
+	help
+	  ebable CPU frequency Overclock mode for Qualcomm QSD8x50 board.
+
 endmenu
 
 config MSM_STACKED_MEMORY

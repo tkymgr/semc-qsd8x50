@@ -71,6 +71,7 @@ struct thread_struct {
 		regs->ARM_cpsr = USR26_MODE;				\
 	if (elf_hwcap & HWCAP_THUMB && pc & 1)				\
 		regs->ARM_cpsr |= PSR_T_BIT;				\
+	regs->ARM_cpsr |= PSR_ENDSTATE;					\
 	regs->ARM_pc = pc & ~1;		/* pc */			\
 	regs->ARM_sp = sp;		/* sp */			\
 	regs->ARM_r2 = stack[2];	/* r2 (envp) */			\
@@ -91,6 +92,11 @@ extern void release_thread(struct task_struct *);
 unsigned long get_wchan(struct task_struct *p);
 
 #define cpu_relax()			barrier()
+
+#if defined(CONFIG_CPU_32v6K) || __LINUX_ARM_ARCH__ >= 7
+#define sev() __asm__("sev")
+#define wfe() __asm__("wfe")
+#endif
 
 /*
  * Create a new kernel thread
