@@ -1,7 +1,7 @@
 /*
  * Automatically generated C config: don't edit
  * Linux kernel version: 2.6.29
- * Sun Sep  4 00:09:37 2011
+ * Sun Sep  4 00:52:14 2011
  */
 #define AUTOCONF_INCLUDED
 #define CONFIG_VIDEO_V4L1_COMPAT 1
@@ -139,6 +139,7 @@
 #define CONFIG_MSM_VIC 1
 #define CONFIG_MMC_MSM_SDC1_SUPPORT 1
 #define CONFIG_NET_KEY 1
+#define CONFIG_RD_GZIP 1
 #define CONFIG_MMC_MSM_SDC2_SUPPORT 1
 #define CONFIG_PPPOPNS 1
 #define CONFIG_INET 1

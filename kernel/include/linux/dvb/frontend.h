@@ -173,7 +173,8 @@ typedef enum fe_modulation {
 typedef enum fe_transmit_mode {
 	TRANSMISSION_MODE_2K,
 	TRANSMISSION_MODE_8K,
-	TRANSMISSION_MODE_AUTO
+	TRANSMISSION_MODE_AUTO,
+	TRANSMISSION_MODE_4K
 } fe_transmit_mode_t;
 
 typedef enum fe_bandwidth {
