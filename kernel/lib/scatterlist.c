@@ -314,7 +314,6 @@ void sg_miter_start(struct sg_mapping_iter *miter, struct scatterlist *sgl,
 	miter->__sg = sgl;
 	miter->__nents = nents;
 	miter->__offset = 0;
-	WARN_ON(!(flags & (SG_MITER_TO_SG | SG_MITER_FROM_SG)));
 	miter->__flags = flags;
 }
 EXPORT_SYMBOL(sg_miter_start);
@@ -348,12 +347,9 @@ bool sg_miter_next(struct sg_mapping_iter *miter)
 	sg_miter_stop(miter);
 
 	/* get to the next sg if necessary.  __offset is adjusted by stop */
-	while (miter->__offset == miter->__sg->length) {
-		if (--miter->__nents) {
-			miter->__sg = sg_next(miter->__sg);
-			miter->__offset = 0;
-		} else
-			return false;
+	if (miter->__offset == miter->__sg->length && --miter->__nents) {
+		miter->__sg = sg_next(miter->__sg);
+		miter->__offset = 0;
 	}
 
 	/* map the next page */
@@ -395,9 +391,6 @@ void sg_miter_stop(struct sg_mapping_iter *miter)
 	if (miter->addr) {
 		miter->__offset += miter->consumed;
 
-		if (miter->__flags & SG_MITER_TO_SG)
-			flush_kernel_dcache_page(miter->page);
-
 		if (miter->__flags & SG_MITER_ATOMIC) {
 			WARN_ON(!irqs_disabled());
 			kunmap_atomic(miter->addr, KM_BIO_SRC_IRQ);
@@ -430,14 +423,8 @@ static size_t sg_copy_buffer(struct scatterlist *sgl, unsigned int nents,
 	unsigned int offset = 0;
 	struct sg_mapping_iter miter;
 	unsigned long flags;
-	unsigned int sg_flags = SG_MITER_ATOMIC;
 
-	if (to_buffer)
-		sg_flags |= SG_MITER_FROM_SG;
-	else
-		sg_flags |= SG_MITER_TO_SG;
-
-	sg_miter_start(&miter, sgl, nents, sg_flags);
+	sg_miter_start(&miter, sgl, nents, SG_MITER_ATOMIC);
 
 	local_irq_save(flags);
 
@@ -448,8 +435,10 @@ static size_t sg_copy_buffer(struct scatterlist *sgl, unsigned int nents,
 
 		if (to_buffer)
 			memcpy(buf + offset, miter.addr, len);
-		else
+		else {
 			memcpy(miter.addr, buf + offset, len);
+			flush_kernel_dcache_page(miter.page);
+		}
 
 		offset += len;
 	}

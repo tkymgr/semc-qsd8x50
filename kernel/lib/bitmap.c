@@ -179,16 +179,14 @@ void __bitmap_shift_left(unsigned long *dst,
 }
 EXPORT_SYMBOL(__bitmap_shift_left);
 
-int __bitmap_and(unsigned long *dst, const unsigned long *bitmap1,
+void __bitmap_and(unsigned long *dst, const unsigned long *bitmap1,
 				const unsigned long *bitmap2, int bits)
 {
 	int k;
 	int nr = BITS_TO_LONGS(bits);
-	unsigned long result = 0;
 
 	for (k = 0; k < nr; k++)
-		result |= (dst[k] = bitmap1[k] & bitmap2[k]);
-	return result != 0;
+		dst[k] = bitmap1[k] & bitmap2[k];
 }
 EXPORT_SYMBOL(__bitmap_and);
 
@@ -214,16 +212,14 @@ void __bitmap_xor(unsigned long *dst, const unsigned long *bitmap1,
 }
 EXPORT_SYMBOL(__bitmap_xor);
 
-int __bitmap_andnot(unsigned long *dst, const unsigned long *bitmap1,
+void __bitmap_andnot(unsigned long *dst, const unsigned long *bitmap1,
 				const unsigned long *bitmap2, int bits)
 {
 	int k;
 	int nr = BITS_TO_LONGS(bits);
-	unsigned long result = 0;
 
 	for (k = 0; k < nr; k++)
-		result |= (dst[k] = bitmap1[k] & ~bitmap2[k]);
-	return result != 0;
+		dst[k] = bitmap1[k] & ~bitmap2[k];
 }
 EXPORT_SYMBOL(__bitmap_andnot);
 

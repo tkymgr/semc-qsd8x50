@@ -49,7 +49,6 @@ cond_syscall(sys_sendmsg);
 cond_syscall(compat_sys_sendmsg);
 cond_syscall(sys_recvmsg);
 cond_syscall(compat_sys_recvmsg);
-cond_syscall(compat_sys_recvfrom);
 cond_syscall(sys_socketcall);
 cond_syscall(sys_futex);
 cond_syscall(compat_sys_futex);
@@ -176,5 +175,3 @@ cond_syscall(compat_sys_timerfd_settime);
 cond_syscall(compat_sys_timerfd_gettime);
 cond_syscall(sys_eventfd);
 cond_syscall(sys_eventfd2);
-/* performance counters: */
-cond_syscall(sys_perf_event_open);
