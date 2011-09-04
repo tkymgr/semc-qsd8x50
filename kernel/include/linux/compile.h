@@ -1,8 +1,8 @@
-/* This file is auto generated, version 20 */
+/* This file is auto generated, version 12 */
 /*  PREEMPT */
 #define UTS_MACHINE "arm"
-#define UTS_VERSION "#20 PREEMPT Sun Sep 4 01:02:07 JST 2011"
-#define LINUX_COMPILE_TIME "01:02:07"
+#define UTS_VERSION "#12 PREEMPT Sun Sep 4 21:22:47 JST 2011"
+#define LINUX_COMPILE_TIME "21:22:47"
 #define LINUX_COMPILE_BY "Goro"
 #define LINUX_COMPILE_HOST "Tsukiyama"
 #define LINUX_COMPILE_DOMAIN

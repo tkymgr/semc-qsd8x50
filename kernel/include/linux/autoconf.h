@@ -1,7 +1,7 @@
 /*
  * Automatically generated C config: don't edit
  * Linux kernel version: 2.6.29
- * Sun Sep  4 00:52:14 2011
+ * Sun Sep  4 21:22:44 2011
  */
 #define AUTOCONF_INCLUDED
 #define CONFIG_VIDEO_V4L1_COMPAT 1
@@ -392,7 +392,6 @@
 #define CONFIG_SLIP_COMPRESSED 1
 #define CONFIG_DUMMY 1
 #define CONFIG_HAS_WAKELOCK 1
-#define CONFIG_PLIST 1
 #define CONFIG_FUTEX 1
 #define CONFIG_LEDS_LV5219LG 1
 #define CONFIG_IP_NF_MATCH_ECN 1
@@ -400,6 +399,7 @@
 #define CONFIG_TINY_RCU 1
 #define CONFIG_MISC_DEVICES 1
 #define CONFIG_CPU_CP15_MMU 1
+#define CONFIG_DECOMPRESS_GZIP 1
 #define CONFIG_EXPERIMENTAL 1
 #define CONFIG_ANDROID_PMEM 1
 #define CONFIG_INPUT 1
