@@ -45,3 +45,5 @@ params_phys-$(CONFIG_ARCH_QSD8X50)	:= 0x20000100
 initrd_phys-$(CONFIG_ARCH_QSD8X50)	:= 0x24000000
 endif
 endif
+# MSM8x60
+   zreladdr-$(CONFIG_ARCH_MSM8X60)	:= 0x40208000

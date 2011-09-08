@@ -39,11 +39,15 @@ target += smd_rpc_sym.c
 $(obj)/smd_rpc_sym.c: $(src)/smd_rpc_sym $(src)/mkrpcsym.pl
 	$(call if_changed,mkrpcsym)
 
+obj-$(CONFIG_MSM_PIL) += peripheral-reset.o
+obj-$(CONFIG_MSM_PIL) += peripheral-loader.o
 obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
 obj-$(CONFIG_MSM_FIQ_SUPPORT) += fiq_glue.o
 obj-$(CONFIG_MACH_TROUT) += board-trout-rfkill.o
-obj-$(CONFIG_MSM_SMD) += smd.o smd_debug.o remote_spinlock.o last_amsslog.o
+obj-$(CONFIG_MSM_SDIO_AL) += sdio_al.o
+obj-$(CONFIG_MSM_SDIO_AL_TEST) += sdio_al_test.o
 obj-$(CONFIG_MSM_SMD_LOGGING) += smem_log.o
+obj-$(CONFIG_MSM_SMD) += smd.o smd_debug.o remote_spinlock.o last_amsslog.o
 obj-$(CONFIG_MSM_SMD_TTY) += smd_tty.o
 obj-$(CONFIG_MSM_SMD_QMI) += smd_qmi.o
 obj-$(CONFIG_MSM_SMD_CTL) += smd_ctl2.o
@@ -78,17 +82,24 @@ endif
 obj-$(CONFIG_MSM_DMA_TEST) += dma_test.o
 obj-$(CONFIG_SURF_FFA_GPIO_KEYPAD) += keypad-surf-ffa.o
 
-obj-$(CONFIG_ARCH_MSM7X01A) += board-halibut.o
+obj-$(CONFIG_ARCH_MSM7X01A) += board-halibut.o devices-msm7x01a.o
 obj-$(CONFIG_MACH_TROUT) += board-trout.o board-trout-gpio.o
 obj-$(CONFIG_MACH_TROUT) += board-trout-keypad.o board-trout-panel.o
 obj-$(CONFIG_MACH_TROUT) += htc_akm_cal.o htc_wifi_nvs.o htc_acoustic.o
 obj-$(CONFIG_MACH_TROUT) += board-trout-mmc.o board-trout-wifi.o
+#obj-$(CONFIG_ARCH_QSD8X50) += devices-qsd8x50.o
 obj-$(CONFIG_MACH_QSD8X50_SURF) += board-qsd8x50.o
 obj-$(CONFIG_MACH_QSD8X50_FFA) += board-qsd8x50.o
 obj-$(CONFIG_MACH_QSD8X50_COMET) += board-comet.o
 obj-$(CONFIG_MACH_QSD8X50A_SURF) += board-qsd8x50.o
 obj-$(CONFIG_MACH_QSD8X50A_FFA) += board-qsd8x50.o
+obj-$(CONFIG_MACH_QSD8X50A_ST1_5) += board-qsd8x50a-st1x.o
 obj-$(CONFIG_MACH_ES209RA) += board-es209ra.o board-es209ra-keypad.o msm_vibrator.o
+obj-$(CONFIG_ARCH_MSM8X60) += devices-msm8x60.o
+obj-$(CONFIG_ARCH_MSM8X60) += clock-local.o clock-8x60.o acpuclock-8x60.o
+obj-$(CONFIG_ARCH_MSM8X60) += clock-8x60_mxo.o clock-rpm.o spm.o restart.o
+obj-$(CONFIG_ARCH_MSM8X60) += subsystem-fatal-8x60.o
+obj-$(CONFIG_ARCH_MSM8X60) += saw-regulator.o
 obj-$(CONFIG_MSM_WATCHDOG) += msm_watchdog.o
 obj-$(CONFIG_TROUT_H2W) += board-trout-h2w.o
 obj-$(CONFIG_TROUT_BATTCHG) += htc_battery.o

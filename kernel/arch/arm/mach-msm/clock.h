@@ -17,11 +17,15 @@
 #ifndef __ARCH_ARM_MACH_MSM_CLOCK_H
 #define __ARCH_ARM_MACH_MSM_CLOCK_H
 
+#include <linux/init.h>
 #include <linux/list.h>
 #include <mach/clk.h>
 
 #include "clock-pcom.h"
 #include "clock-7x30.h"
+
+/* Maximum number of clocks supported. */
+#define MAX_NR_CLKS	300
 
 #define CLKFLAG_INVERT			0x00000001
 #define CLKFLAG_NOINVERT		0x00000002
