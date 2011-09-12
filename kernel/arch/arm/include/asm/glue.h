@@ -120,44 +120,44 @@
 #endif
 
 /*
- * Prefetch abort handler.  If the CPU has an IFAR use that, otherwise
- * use the address of the aborted instruction
+ *	Prefetch Abort Model
+ *	================
+ *
+ *	We have the following to choose from:
+ *	  legacy	- no IFSR, no IFAR
+ *	  v6		- ARMv6: IFSR, no IFAR
+ *	  v7		- ARMv7: IFSR and IFAR
  */
+
 #undef CPU_PABORT_HANDLER
 #undef MULTI_PABORT
 
-#ifdef __ASSEMBLY__
-
-#ifdef CONFIG_CPU_PABRT_IFAR
+#ifdef CONFIG_CPU_PABRT_LEGACY
 # ifdef CPU_PABORT_HANDLER
 #  define MULTI_PABORT 1
 # else
-#  define CPU_PABORT_HANDLER(reg, insn)	mrc p15, 0, reg, cr6, cr0, 2 @asm macro;
+#  define CPU_PABORT_HANDLER legacy_pabort
 # endif
 #endif
 
-#ifdef CONFIG_CPU_PABRT_NOIFAR
+#ifdef CONFIG_CPU_PABRT_V6
 # ifdef CPU_PABORT_HANDLER
 #  define MULTI_PABORT 1
 # else
-#  define CPU_PABORT_HANDLER(reg, insn)	mov reg, insn                @asm macro;
+#  define CPU_PABORT_HANDLER v6_pabort
+# endif
+#endif
+
+#ifdef CONFIG_CPU_PABRT_V7
+# ifdef CPU_PABORT_HANDLER
+#  define MULTI_PABORT 1
+# else
+#  define CPU_PABORT_HANDLER v7_pabort
 # endif
 #endif
 
 #ifndef CPU_PABORT_HANDLER
 #error Unknown prefetch abort handler type
 #endif
-
-/*
- * Instruction Fault Status Register.  (New register as of ARMv6)
- * If processor has IFSR then set value, else set translation fault
- */
-#if defined(CONFIG_CPU_ABRT_EV7) || defined(CONFIG_CPU_ABRT_EV6)
-# define CPU_PABORT_IFSR(reg)	mrc p15, 0, reg, cr5, cr0, 1         @asm macro;
-#else
-# define CPU_PABORT_IFSR(reg)	mov reg, #5                          @asm macro;
-#endif
-
-#endif /* __ASSEMBLY__ */
 
 #endif

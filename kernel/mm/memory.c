@@ -206,7 +206,7 @@ static inline void free_pud_range(struct mmu_gather *tlb, pgd_t *pgd,
 
 	pud = pud_offset(pgd, start);
 	pgd_clear(pgd);
-	pud_free_tlb(tlb, pud);
+	pud_free_tlb(tlb, pud, start);
 }
 
 /*

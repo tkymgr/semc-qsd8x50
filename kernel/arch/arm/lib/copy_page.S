@@ -30,8 +30,8 @@ ENTRY(copy_page)
 	PLD(	pld	[r1, #L1_CACHE_BYTES]		)
 		mov	r2, #COPY_COUNT			@	1
 		ldmia	r1!, {r3, r4, ip, lr}		@	4+1
-1:	PLD(	pld	[r1, #2 * L1_CACHE_BYTES]	)
-	PLD(	pld	[r1, #3 * L1_CACHE_BYTES]	)
+1:	PLD(	pld	[r1, #2 * L1_CACHE_BYTES])
+	PLD(	pld	[r1, #3 * L1_CACHE_BYTES])
 2:
 	.rept	(2 * L1_CACHE_BYTES / 16 - 1)
 		stmia	r0!, {r3, r4, ip, lr}		@	4

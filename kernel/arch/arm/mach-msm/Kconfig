@@ -33,6 +33,12 @@ config ARCH_MSM7X30
 	select MSM_REMOTE_SPINLOCK_DEKKERS
 	select ARCH_SPARSEMEM_ENABLE
 	select MEMORY_HOTPLUG
+	select MEMORY_HOTREMOVE
+	select MIGRATION
+	select ARCH_MEMORY_PROBE
+	select ARCH_MEMORY_REMOVE
+	select DONT_RESERVE_FROM_MOVABLE_ZONE
+	select ARCH_HAS_HOLES_MEMORYMODEL
 
 config ARCH_QSD8X50
 	bool "QSD8X50"
@@ -1052,7 +1058,7 @@ config MSM_CPU_AVS
 	bool "Enable Adaptive Voltage Scaling (AVS)"
 	depends on (ARCH_MSM_SCORPION && QSD_SVS)
 	depends on ARCH_QSD8X50
-	default y
+	default n
 	help
 	  This enables the Adaptive Voltage Scaling feature of
 	  Qualcomm ARMv7 CPUs. It adjusts the voltage for each frequency

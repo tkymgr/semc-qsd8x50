@@ -28,12 +28,7 @@
 #include <linux/memory_hotplug.h>
 #endif
 
-#ifdef CONFIG_KEXEC
-#include <linux/kexec.h>
-#endif
-#ifdef CONFIG_CRASH_DUMP
-#include <linux/crash_dump.h>
-#endif
+#include <asm/unified.h>
 #include <asm/cpu.h>
 #include <asm/cputype.h>
 #include <asm/elf.h>
@@ -49,9 +44,11 @@
 #include <asm/mach/irq.h>
 #include <asm/mach/time.h>
 #include <asm/traps.h>
+#include <asm/unwind.h>
 
 #include "compat.h"
 #include "atags.h"
+#include "tcm.h"
 
 #ifndef MEM_SIZE
 #define MEM_SIZE	(16*1024*1024)
@@ -335,25 +332,38 @@ void cpu_init(void)
 	}
 
 	/*
+	 * Define the placement constraint for the inline asm directive below.
+	 * In Thumb-2, msr with an immediate value is not allowed.
+	 */
+#ifdef CONFIG_THUMB2_KERNEL
+#define PLC	"r"
+#else
+#define PLC	"I"
+#endif
+
+	/*
 	 * setup stacks for re-entrant exception handlers
 	 */
 	__asm__ (
 	"msr	cpsr_c, %1\n\t"
-	"add	sp, %0, %2\n\t"
+	"add	r14, %0, %2\n\t"
+	"mov	sp, r14\n\t"
 	"msr	cpsr_c, %3\n\t"
-	"add	sp, %0, %4\n\t"
+	"add	r14, %0, %4\n\t"
+	"mov	sp, r14\n\t"
 	"msr	cpsr_c, %5\n\t"
-	"add	sp, %0, %6\n\t"
+	"add	r14, %0, %6\n\t"
+	"mov	sp, r14\n\t"
 	"msr	cpsr_c, %7"
 	    :
 	    : "r" (stk),
-	      "I" (PSR_F_BIT | PSR_I_BIT | IRQ_MODE),
+	      PLC (PSR_F_BIT | PSR_I_BIT | IRQ_MODE),
 	      "I" (offsetof(struct stack, irq[0])),
-	      "I" (PSR_F_BIT | PSR_I_BIT | ABT_MODE),
+	      PLC (PSR_F_BIT | PSR_I_BIT | ABT_MODE),
 	      "I" (offsetof(struct stack, abt[0])),
-	      "I" (PSR_F_BIT | PSR_I_BIT | UND_MODE),
+	      PLC (PSR_F_BIT | PSR_I_BIT | UND_MODE),
 	      "I" (offsetof(struct stack, und[0])),
-	      "I" (PSR_F_BIT | PSR_I_BIT | SVC_MODE)
+	      PLC (PSR_F_BIT | PSR_I_BIT | SVC_MODE)
 	    : "r14");
 }
 
@@ -460,6 +470,34 @@ static void __init early_mem_reserved(char **p)
 	}
 }
 __early_param("mem_reserved=", early_mem_reserved);
+
+static void __init early_mem_low_power(char **p)
+{
+	unsigned int start;
+	unsigned int size;
+	unsigned int end;
+	unsigned int h_end;
+
+	start = PHYS_OFFSET;
+	size  = memparse(*p, p);
+	if (**p == '@')
+		start = memparse(*p + 1, p);
+
+	if (low_power_memory_start) {
+		end = start + size;
+		h_end = low_power_memory_start + low_power_memory_size;
+		end = max(end, h_end);
+		low_power_memory_start = min(low_power_memory_start,
+			(unsigned long)start);
+		low_power_memory_size = end - low_power_memory_start;
+	} else {
+		low_power_memory_start = start;
+		low_power_memory_size = size;
+	}
+
+	arm_add_memory(start, size);
+}
+__early_param("mem_low_power=", early_mem_low_power);
 #endif
 
 /*
@@ -516,47 +554,10 @@ setup_ramdisk(int doload, int prompt, int image_start, unsigned int rd_sz)
 #endif
 }
 
-#if defined(CONFIG_KEXEC)
-#define CAPTURE_KERNEL_MEM_SIZE (7*1024*1024)
-static void __init
-reserve_crashkernel_mem(struct resource *res)
-{
-	unsigned long crashk_base;
-	unsigned long crashk_size;
-
-	if (res)
-		crashk_base = ((res->end + 1) -
-				CAPTURE_KERNEL_MEM_SIZE) & (~(SZ_2M - 1));
-	else
-		crashk_base = 0x0;
-
-	crashk_size = (res->end + 1) - crashk_base;
-
-	if (crashk_base <= 0 || crashk_size <= 0) {
-		printk(KERN_WARNING "KDUMP: crashkernel reservation failed - "
-				"invalid base address/size\n");
-		return;
-	}
-
-	crashk_res.start = crashk_base;
-	crashk_res.end = crashk_base + crashk_size - 1;
-	if (reserve_bootmem(crashk_res.start, crashk_size, BOOTMEM_DEFAULT)) {
-		printk(KERN_WARNING "KDUMP: reserve bootmem failed\n");
-		return;
-	} else
-		printk(KERN_INFO "KDUMP: Reserved Crashk Memory\n");
-
-	if (request_resource(res, &crashk_res))
-		printk(KERN_WARNING "KDUMP: request_resource Failed\n");
-
-	return;
-}
-#endif
-
 static void __init
 request_standard_resources(struct meminfo *mi, struct machine_desc *mdesc)
 {
-	struct resource *res = NULL;
+	struct resource *res;
 	int i;
 
 	kernel_code.start   = virt_to_phys(_text);
@@ -583,9 +584,6 @@ request_standard_resources(struct meminfo *mi, struct machine_desc *mdesc)
 		    kernel_data.end <= res->end)
 			request_resource(res, &kernel_data);
 	}
-#if defined(CONFIG_KEXEC)
-	reserve_crashkernel_mem(res);
-#endif
 
 	if (mdesc->video_start) {
 		video_ram.start = mdesc->video_start;
@@ -663,6 +661,35 @@ static int __init parse_tag_mem32_reserved(const struct tag *tag)
 }
 
 __tagtable(ATAG_MEM_RESERVED, parse_tag_mem32_reserved);
+
+static int __init parse_tag_mem32_low_power(const struct tag *tag)
+{
+	unsigned int start;
+	unsigned int size;
+	unsigned int end;
+	unsigned int h_end;
+
+	start = tag->u.mem.start;
+	size = tag->u.mem.size;
+
+	if (low_power_memory_start) {
+		end = start + size;
+		h_end = low_power_memory_start + low_power_memory_size;
+		end = max(end, h_end);
+		low_power_memory_start = min(low_power_memory_start,
+			(unsigned long)start);
+		low_power_memory_size = end - low_power_memory_start;
+	} else {
+		low_power_memory_start = tag->u.mem.start;
+		low_power_memory_size = tag->u.mem.size;
+	}
+	printk(KERN_ALERT "low power memory %lx at %lx\n",
+		low_power_memory_size, low_power_memory_start);
+
+	return arm_add_memory(tag->u.mem.start, tag->u.mem.size);
+}
+
+__tagtable(ATAG_MEM_LOW_POWER, parse_tag_mem32_low_power);
 #endif
 
 #if defined(CONFIG_VGA_CONSOLE) || defined(CONFIG_DUMMY_CONSOLE)
@@ -721,13 +748,15 @@ __tagtable(ATAG_REVISION, parse_tag_revision);
 
 static int __init parse_tag_cmdline(const struct tag *tag)
 {
-	if (default_command_line[0]) {
-		strlcat(default_command_line, " ", COMMAND_LINE_SIZE);
-		strlcat(default_command_line, tag->u.cmdline.cmdline, COMMAND_LINE_SIZE);
-	} else {
-		strlcpy(default_command_line, tag->u.cmdline.cmdline, COMMAND_LINE_SIZE);
-	}
+        if (default_command_line[0]) {
+                strlcat(default_command_line, " ", COMMAND_LINE_SIZE);
+                strlcat(default_command_line, tag->u.cmdline.cmdline, COMMAND_LINE_SIZE);
+        } else {
+                strlcpy(default_command_line, tag->u.cmdline.cmdline, COMMAND_LINE_SIZE);
+        }
 
+
+//	strlcpy(default_command_line, tag->u.cmdline.cmdline, COMMAND_LINE_SIZE);
 	return 0;
 }
 
@@ -793,24 +822,13 @@ static int __init customize_machine(void)
 }
 arch_initcall(customize_machine);
 
-#ifdef CONFIG_CRASH_DUMP
-static int __init parse_elfcorehdr(char *p)
-{
-	if (p) {
-		elfcorehdr_addr = memparse(p, &p);
-		if (reserve_bootmem(elfcorehdr_addr, 16*1024, BOOTMEM_DEFAULT))
-			printk(KERN_WARNING "KDUMP: reserve_mem failed\n");
-	}
-	return 1;
-}
-__setup("elfcorehdr=", parse_elfcorehdr);
-#endif
-
 void __init setup_arch(char **cmdline_p)
 {
 	struct tag *tags = (struct tag *)&init_tags;
 	struct machine_desc *mdesc;
 	char *from = default_command_line;
+
+	unwind_init();
 
 	setup_processor();
 	mdesc = setup_machine(machine_arch_type);
@@ -859,6 +877,7 @@ void __init setup_arch(char **cmdline_p)
 #endif
 
 	cpu_init();
+	tcm_init();
 
 	/*
 	 * Set up various architecture-specific pointers
