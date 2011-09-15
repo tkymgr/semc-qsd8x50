@@ -1,4 +1,5 @@
 #include <linux/types.h>
+#include <linux/clockchips.h>
 
 #include <xen/interface/xen.h>
 #include <xen/grant_table.h>
@@ -6,6 +7,7 @@
 
 #include <asm/xen/hypercall.h>
 #include <asm/xen/page.h>
+#include <asm/fixmap.h>
 
 #include "xen-ops.h"
 #include "mmu.h"
@@ -26,6 +28,8 @@ void xen_pre_suspend(void)
 
 void xen_post_suspend(int suspend_cancelled)
 {
+	xen_build_mfn_list_list();
+
 	xen_setup_shared_info();
 
 	if (suspend_cancelled) {
@@ -43,7 +47,19 @@ void xen_post_suspend(int suspend_cancelled)
 
 }
 
+static void xen_vcpu_notify_restore(void *data)
+{
+	unsigned long reason = (unsigned long)data;
+
+	/* Boot processor notified via generic timekeeping_resume() */
+	if ( smp_processor_id() == 0)
+		return;
+
+	clockevents_notify(reason, NULL);
+}
+
 void xen_arch_resume(void)
 {
-	/* nothing */
+	smp_call_function(xen_vcpu_notify_restore,
+			       (void *)CLOCK_EVT_NOTIFY_RESUME, 1);
 }

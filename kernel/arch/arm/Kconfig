@@ -819,8 +819,6 @@ endif
 
 source "arch/arm/mach-lh7a40x/Kconfig"
 
-source "arch/arm/mach-imx/Kconfig"
-
 source "arch/arm/mach-h720x/Kconfig"
 
 source "arch/arm/mach-versatile/Kconfig"

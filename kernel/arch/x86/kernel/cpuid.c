@@ -182,12 +182,18 @@ static struct notifier_block __refdata cpuid_class_cpu_notifier =
 	.notifier_call = cpuid_class_cpu_callback,
 };
 
+static char *cpuid_devnode(struct device *dev, mode_t *mode)
+{
+	return kasprintf(GFP_KERNEL, "cpu/%u/cpuid", MINOR(dev->devt));
+}
+
 static int __init cpuid_init(void)
 {
 	int i, err = 0;
 	i = 0;
 
-	if (register_chrdev(CPUID_MAJOR, "cpu/cpuid", &cpuid_fops)) {
+	if (__register_chrdev(CPUID_MAJOR, 0, NR_CPUS,
+			      "cpu/cpuid", &cpuid_fops)) {
 		printk(KERN_ERR "cpuid: unable to get major %d for cpuid\n",
 		       CPUID_MAJOR);
 		err = -EBUSY;
@@ -198,6 +204,7 @@ static int __init cpuid_init(void)
 		err = PTR_ERR(cpuid_class);
 		goto out_chrdev;
 	}
+	cpuid_class->devnode = cpuid_devnode;
 	for_each_online_cpu(i) {
 		err = cpuid_device_create(i);
 		if (err != 0)
@@ -215,7 +222,7 @@ out_class:
 	}
 	class_destroy(cpuid_class);
 out_chrdev:
-	unregister_chrdev(CPUID_MAJOR, "cpu/cpuid");
+	__unregister_chrdev(CPUID_MAJOR, 0, NR_CPUS, "cpu/cpuid");
 out:
 	return err;
 }
@@ -227,7 +234,7 @@ static void __exit cpuid_exit(void)
 	for_each_online_cpu(cpu)
 		cpuid_device_destroy(cpu);
 	class_destroy(cpuid_class);
-	unregister_chrdev(CPUID_MAJOR, "cpu/cpuid");
+	__unregister_chrdev(CPUID_MAJOR, 0, NR_CPUS, "cpu/cpuid");
 	unregister_hotcpu_notifier(&cpuid_class_cpu_notifier);
 }
 

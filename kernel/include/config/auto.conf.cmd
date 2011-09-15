@@ -413,6 +413,8 @@ deps_config := \
 	arch/arm/mach-davinci/Kconfig \
 	arch/arm/mach-ns9xxx/Kconfig \
 	arch/arm/mach-netx/Kconfig \
+	arch/arm/mach-mxc91231/Kconfig \
+	arch/arm/mach-mx25/Kconfig \
 	arch/arm/mach-mx3/Kconfig \
 	arch/arm/mach-mx2/Kconfig \
 	arch/arm/mach-mx1/Kconfig \
@@ -422,7 +424,6 @@ deps_config := \
 	arch/arm/mach-aaec2000/Kconfig \
 	arch/arm/mach-versatile/Kconfig \
 	arch/arm/mach-h720x/Kconfig \
-	arch/arm/mach-imx/Kconfig \
 	arch/arm/mach-lh7a40x/Kconfig \
 	arch/arm/mach-s3c6410/Kconfig \
 	arch/arm/mach-s3c6400/Kconfig \

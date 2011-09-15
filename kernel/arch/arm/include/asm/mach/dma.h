@@ -40,18 +40,15 @@ struct dma_struct {
 	unsigned int	lock;		/* Device is allocated		*/
 	const char	*device_id;	/* Device name			*/
 
-	unsigned int	dma_base;	/* Controller base address	*/
-	int		dma_irq;	/* Controller IRQ		*/
-	struct scatterlist cur_sg;	/* Current controller buffer	*/
-	unsigned int	state;
-
-	struct dma_ops	*d_ops;
+	const struct dma_ops *d_ops;
 };
 
-/* Prototype: void arch_dma_init(dma)
- * Purpose  : Initialise architecture specific DMA
- * Params   : dma - pointer to array of DMA structures
+/*
+ * isa_dma_add - add an ISA-style DMA channel
  */
-extern void arch_dma_init(dma_t *dma);
+extern int isa_dma_add(unsigned int, dma_t *dma);
 
-extern void isa_init_dma(dma_t *dma);
+/*
+ * Add the ISA DMA controller.  Always takes channels 0-7.
+ */
+extern void isa_init_dma(void);

@@ -64,7 +64,8 @@ SECTIONS
 			usr/built-in.o(.init.ramfs)
 		__initramfs_end = .;
 #endif
-		. = ALIGN(4096);
+		. = ALIGN(PAGE_SIZE);
+		__per_cpu_load = .;
 		__per_cpu_start = .;
 			*(.data.percpu.page_aligned)
 			*(.data.percpu)
@@ -73,7 +74,7 @@ SECTIONS
 #ifndef CONFIG_XIP_KERNEL
 		__init_begin = _stext;
 		INIT_DATA
-		. = ALIGN(4096);
+		. = ALIGN(PAGE_SIZE);
 		__init_end = .;
 #endif
 	}
@@ -119,7 +120,7 @@ SECTIONS
 		*(.got)			/* Global offset table		*/
 	}
 
-	RODATA
+	RO_DATA(PAGE_SIZE)
 
 	_etext = .;			/* End of text and rodata section */
 
@@ -159,17 +160,17 @@ SECTIONS
 		*(.data.init_task)
 
 #ifdef CONFIG_XIP_KERNEL
-		. = ALIGN(4096);
+		. = ALIGN(PAGE_SIZE);
 		__init_begin = .;
 		INIT_DATA
-		. = ALIGN(4096);
+		. = ALIGN(PAGE_SIZE);
 		__init_end = .;
 #endif
 
-		. = ALIGN(4096);
+		. = ALIGN(PAGE_SIZE);
 		__nosave_begin = .;
 		*(.data.nosave)
-		. = ALIGN(4096);
+		. = ALIGN(PAGE_SIZE);
 		__nosave_end = .;
 
 		/*

@@ -61,11 +61,6 @@ DEFINE_TRACE(sched_process_wait);
 
 static void exit_mm(struct task_struct * tsk);
 
-static inline int task_detached(struct task_struct *p)
-{
-	return p->exit_signal == -1;
-}
-
 static void __unhash_process(struct task_struct *p)
 {
 	nr_threads--;
@@ -1671,6 +1666,12 @@ static int ptrace_do_wait(struct task_struct *tsk, int *notask_error,
 	}
 
 	return 0;
+}
+
+void __wake_up_parent(struct task_struct *p, struct task_struct *parent)
+{
+	__wake_up_sync_key(&parent->signal->wait_chldexit,
+				TASK_INTERRUPTIBLE, 1, p);
 }
 
 static long do_wait(enum pid_type type, struct pid *pid, int options,

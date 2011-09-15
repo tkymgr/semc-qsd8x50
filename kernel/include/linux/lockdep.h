@@ -332,6 +332,8 @@ extern void lockdep_trace_alloc(gfp_t mask);
 
 #define lockdep_depth(tsk)	(debug_locks ? (tsk)->lockdep_depth : 0)
 
+#define lockdep_assert_held(l)	WARN_ON(debug_locks && !lockdep_is_held(l))
+
 #else /* !LOCKDEP */
 
 static inline void lockdep_off(void)
@@ -370,6 +372,8 @@ static inline void lockdep_on(void)
 struct lock_class_key { };
 
 #define lockdep_depth(tsk)	(0)
+
+#define lockdep_assert_held(l)			do { } while (0)
 
 #endif /* !LOCKDEP */
 

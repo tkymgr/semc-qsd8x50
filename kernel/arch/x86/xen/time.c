@@ -100,7 +100,7 @@ bool xen_vcpu_stolen(int vcpu)
 	return per_cpu(runstate, vcpu).state == RUNSTATE_runnable;
 }
 
-static void setup_runstate_info(int cpu)
+void xen_setup_runstate_info(int cpu)
 {
 	struct vcpu_register_runstate_memory_area area;
 
@@ -213,6 +213,11 @@ cycle_t xen_clocksource_read(void)
 	return ret;
 }
 
+static cycle_t xen_clocksource_get_cycles(struct clocksource *cs)
+{
+	return xen_clocksource_read();
+}
+
 static void xen_read_wallclock(struct timespec *ts)
 {
 	struct shared_info *s = HYPERVISOR_shared_info;
@@ -241,7 +246,7 @@ int xen_set_wallclock(unsigned long now)
 static struct clocksource xen_clocksource __read_mostly = {
 	.name = "xen",
 	.rating = 400,
-	.read = xen_clocksource_read,
+	.read = xen_clocksource_get_cycles,
 	.mask = ~0,
 	.mult = 1<<XEN_SHIFT,		/* time directly in nanoseconds */
 	.shift = XEN_SHIFT,
@@ -429,7 +434,7 @@ void xen_setup_timer(int cpu)
 		name = "<timer kasprintf failed>";
 
 	irq = bind_virq_to_irqhandler(VIRQ_TIMER, cpu, xen_timer_interrupt,
-				      IRQF_DISABLED|IRQF_PERCPU|IRQF_NOBALANCING,
+				      IRQF_DISABLED|IRQF_PERCPU|IRQF_NOBALANCING|IRQF_TIMER,
 				      name, NULL);
 
 	evt = &per_cpu(xen_clock_events, cpu);
@@ -437,8 +442,6 @@ void xen_setup_timer(int cpu)
 
 	evt->cpumask = cpumask_of(cpu);
 	evt->irq = irq;
-
-	setup_runstate_info(cpu);
 }
 
 void xen_teardown_timer(int cpu)
@@ -489,6 +492,7 @@ __init void xen_time_init(void)
 
 	setup_force_cpu_cap(X86_FEATURE_TSC);
 
+	xen_setup_runstate_info(cpu);
 	xen_setup_timer(cpu);
 	xen_setup_cpu_clockevents();
 }
