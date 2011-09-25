@@ -26,9 +26,10 @@
 #include <linux/swap.h>
 #include <linux/writeback.h>
 #include <linux/task_io_accounting_ops.h>
-#include <linux/blktrace_api.h>
 #include <linux/fault-inject.h>
-#include <trace/block.h>
+
+#define CREATE_TRACE_POINTS
+#include <trace/events/block.h>
 
 #include "blk.h"
 
@@ -1267,7 +1268,7 @@ static inline void blk_partition_remap(struct bio *bio)
 		bio->bi_bdev = bdev->bd_contains;
 
 		trace_block_remap(bdev_get_queue(bio->bi_bdev), bio,
-				    bdev->bd_dev, bio->bi_sector,
+				    bdev->bd_dev,
 				    bio->bi_sector - p->start_sect);
 	}
 }
@@ -1436,10 +1437,7 @@ static inline void __generic_make_request(struct bio *bio)
 			goto end_io;
 
 		if (old_sector != -1)
-			trace_block_remap(q, bio, old_dev, bio->bi_sector,
-					    old_sector);
-
-		trace_block_bio_queue(q, bio);
+			trace_block_remap(q, bio, old_dev, old_sector);
 
 		old_sector = bio->bi_sector;
 		old_dev = bio->bi_bdev->bd_dev;

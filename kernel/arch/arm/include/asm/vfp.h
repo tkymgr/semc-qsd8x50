@@ -21,7 +21,7 @@
 #define FPSID_FORMAT_MASK	(0x3  << FPSID_FORMAT_BIT)
 #define FPSID_NODOUBLE		(1<<20)
 #define FPSID_ARCH_BIT		(16)
-#define FPSID_ARCH_MASK		(0xF  << FPSID_ARCH_BIT)
+#define FPSID_ARCH_MASK		(0x7F  << FPSID_ARCH_BIT)
 #define FPSID_PART_BIT		(8)
 #define FPSID_PART_MASK		(0xFF << FPSID_PART_BIT)
 #define FPSID_VARIANT_BIT	(4)
@@ -87,4 +87,3 @@
 int vfp_flush_context(void);
 void vfp_reinit(void);
 #endif
-

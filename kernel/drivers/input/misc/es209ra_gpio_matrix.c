@@ -165,8 +165,8 @@ static void gpio_keypad_direction_input(int gpio)
 	int err;
 
 	err = gpio_tlmm_config(
-		GPIO_CFG(gpio, 0, GPIO_INPUT, GPIO_PULL_UP, GPIO_2MA),
-		GPIO_ENABLE);
+		GPIO_CFG(gpio, 0, GPIO_CFG_INPUT, GPIO_CFG_PULL_UP, GPIO_CFG_2MA),
+		GPIO_CFG_ENABLE);
 	if (err) {
 		pr_err("gpiomatrix: "
 		       "gpio_tlmm_config failed for output %d\n",
@@ -185,8 +185,8 @@ static void gpio_keypad_direction_output(int gpio, int value)
 	int err;
 
 	err = gpio_tlmm_config(
-		GPIO_CFG(gpio, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_2MA),
-		GPIO_ENABLE);
+		GPIO_CFG(gpio, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA),
+		GPIO_CFG_ENABLE);
 	if (!err) {
 		gpio_set_value(gpio, value);
 	} else {

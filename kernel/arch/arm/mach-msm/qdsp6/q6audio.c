@@ -38,6 +38,7 @@
 #include <linux/gpio.h>
 
 #include "q6audio_devices.h"
+#include <mach/debug_mm.h>
 
 #if 0
 #define TRACE(x...) pr_info("Q6: "x)
@@ -1225,17 +1226,8 @@ static void _audio_rx_clk_disable(void)
 	case Q6_ECODEC_RX:
 		ecodec_clk_refcount--;
 		if (ecodec_clk_refcount == 0) {
-
-			gpio_tlmm_config(
-					GPIO_CFG(audio_gpios.aux_pcm_dout, 0, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_2MA), GPIO_ENABLE);
-			gpio_set_value(audio_gpios.aux_pcm_dout, 0);
-			msleep(20);
-
 			clk_disable(ecodec_clk);
 			audio_rx_device_group = -1;
-
-			gpio_tlmm_config(
-					GPIO_CFG(audio_gpios.aux_pcm_dout, 1, GPIO_OUTPUT, GPIO_NO_PULL, GPIO_2MA), GPIO_ENABLE);
 		}
 		break;
 	case Q6_SDAC_RX:
@@ -1246,8 +1238,8 @@ static void _audio_rx_clk_disable(void)
 		}
 		break;
 	default:
-		pr_err("audiolib: invalid rx device group %d\n",
-			audio_rx_device_group);
+		pr_err("[%s:%s] invalid rx device group %d\n", __MM_FILE__,
+				__func__, audio_rx_device_group);
 		break;
 	}
 }

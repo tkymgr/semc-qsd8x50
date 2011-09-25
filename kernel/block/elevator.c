@@ -33,9 +33,10 @@
 #include <linux/compiler.h>
 #include <linux/delay.h>
 #include <linux/blktrace_api.h>
-#include <trace/block.h>
 #include <linux/hash.h>
 #include <linux/uaccess.h>
+
+#include <trace/events/block.h>
 
 #include "blk.h"
 

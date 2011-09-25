@@ -1,28 +1,29 @@
 /* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
+ * modification, are permitted provided that the following conditions are
+ * met:
  *     * Redistributions of source code must retain the above copyright
  *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Code Aurora nor
- *       the names of its contributors may be used to endorse or promote
- *       products derived from this software without specific prior written
- *       permission.
+ *     * Redistributions in binary form must reproduce the above
+ *       copyright notice, this list of conditions and the following
+ *       disclaimer in the documentation and/or other materials provided
+ *       with the distribution.
+ *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
+ *       contributors may be used to endorse or promote products derived
+ *       from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -188,7 +189,15 @@ static inline void __raw_remote_dek_spin_unlock(raw_remote_spinlock_t *lock)
 	lock->dek.self_lock = DEK_LOCK_YIELD;
 }
 
+#ifdef CONFIG_MSM_SMD
 int _remote_spin_lock_init(remote_spinlock_id_t, _remote_spinlock_t *lock);
+#else
+static inline
+int _remote_spin_lock_init(remote_spinlock_id_t id, _remote_spinlock_t *lock)
+{
+	return -EINVAL;
+}
+#endif
 
 #if defined(CONFIG_MSM_REMOTE_SPINLOCK_DEKKERS)
 /* Use Dekker's algorithm when LDREX/STREX and SWP are unavailable for
@@ -232,9 +241,23 @@ struct remote_mutex_id {
 	uint32_t		delay_us;
 };
 
+#ifdef CONFIG_MSM_SMD
 int _remote_mutex_init(struct remote_mutex_id *id, _remote_mutex_t *lock);
 void _remote_mutex_lock(_remote_mutex_t *lock);
 void _remote_mutex_unlock(_remote_mutex_t *lock);
 int _remote_mutex_trylock(_remote_mutex_t *lock);
+#else
+static inline
+int _remote_mutex_init(struct remote_mutex_id *id, _remote_mutex_t *lock)
+{
+	return -EINVAL;
+}
+static inline void _remote_mutex_lock(_remote_mutex_t *lock) {}
+static inline void _remote_mutex_unlock(_remote_mutex_t *lock) {}
+static inline int _remote_mutex_trylock(_remote_mutex_t *lock)
+{
+	return 0;
+}
+#endif
 
 #endif /* __ASM__ARCH_QC_REMOTE_SPINLOCK_H */

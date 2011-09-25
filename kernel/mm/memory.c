@@ -139,7 +139,7 @@ static void free_pte_range(struct mmu_gather *tlb, pmd_t *pmd)
 {
 	pgtable_t token = pmd_pgtable(*pmd);
 	pmd_clear(pmd);
-	pte_free_tlb(tlb, token);
+	pte_free_tlb(tlb, token, addr);
 	tlb->mm->nr_ptes--;
 }
 
@@ -173,7 +173,7 @@ static inline void free_pmd_range(struct mmu_gather *tlb, pud_t *pud,
 
 	pmd = pmd_offset(pud, start);
 	pud_clear(pud);
-	pmd_free_tlb(tlb, pmd);
+	pmd_free_tlb(tlb, pmd, start);
 }
 
 static inline void free_pud_range(struct mmu_gather *tlb, pgd_t *pgd,

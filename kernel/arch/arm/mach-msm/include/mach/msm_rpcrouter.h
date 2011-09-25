@@ -111,6 +111,11 @@ struct rpc_reply_hdr
 	} data;
 };
 
+struct rpc_board_dev {
+	uint32_t prog;
+	struct platform_device pdev;
+};
+
 /* flags for msm_rpc_connect() */
 #define MSM_RPC_UNINTERRUPTIBLE 0x0001
 
@@ -130,6 +135,7 @@ int msm_rpc_write(struct msm_rpc_endpoint *ept,
 		  void *data, int len);
 int msm_rpc_read(struct msm_rpc_endpoint *ept,
 		 void **data, unsigned len, long timeout);
+void msm_rpc_read_wakeup(struct msm_rpc_endpoint *ept);
 void msm_rpc_setup_req(struct rpc_request_hdr *hdr,
 		       uint32_t prog, uint32_t vers, uint32_t proc);
 int msm_rpc_register_server(struct msm_rpc_endpoint *ept,
@@ -137,7 +143,11 @@ int msm_rpc_register_server(struct msm_rpc_endpoint *ept,
 int msm_rpc_unregister_server(struct msm_rpc_endpoint *ept,
 			      uint32_t prog, uint32_t vers);
 
+int msm_rpc_add_board_dev(struct rpc_board_dev *board_dev, int num);
+
 int msm_rpc_clear_netreset(struct msm_rpc_endpoint *ept);
+
+int msm_rpc_get_curr_pkt_size(struct msm_rpc_endpoint *ept);
 /* simple blocking rpc call
  *
  * request is mandatory and must have a rpc_request_hdr

@@ -1107,7 +1107,7 @@ static void semc_imx046_camera_sensor_exit(void)
 
 	ret = gpio_tlmm_config(GPIO_CFG
 		(semc_imx046_camera_ctrl->sensordata->mclk, 0,
-		GPIO_OUTPUT, GPIO_PULL_DOWN, GPIO_2MA), GPIO_ENABLE);
+		GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
 	if (ret)
 		SEMC_IMX046_MSG_ERR("%s Stop CAM_MCLK failed\n", __func__);
 
@@ -1250,7 +1250,7 @@ static int semc_imx046_camera_sensor_open_init(
 
 	ret = gpio_tlmm_config(GPIO_CFG
 		(semc_imx046_camera_ctrl->sensordata->mclk, 1,
-		GPIO_OUTPUT, GPIO_PULL_DOWN, GPIO_2MA), GPIO_ENABLE);
+		GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
 	if (ret) {
 		SEMC_IMX046_MSG_ERR("%s Output CAM_MCLK failed\n", __func__);
 		goto open_done;

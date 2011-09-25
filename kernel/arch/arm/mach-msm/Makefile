@@ -1,22 +1,23 @@
 obj-y += io.o dma.o memory.o
-#obj-y += devices.o
-obj-y += proc_comm.o
-obj-y += vreg.o mpp.o
-obj-y += vreg.o
-obj-y += clock.o clock-pcom.o
-obj-y += generic_gpio.o
-obj-y += nand_partitions.o
+obj-y += clock.o
 obj-y += modem_notifier.o
-obj-y += rpc_hsusb.o rpc_pmapp.o rpc_fsusb.o
-obj-y += socinfo.o
-obj-$(CONFIG_MSM_CPU_FREQ_SCREEN) += cpufreq.o
 obj-$(CONFIG_CPU_FREQ_MSM) += cpufreq.o
 obj-$(CONFIG_DEBUG_FS) += nohlt.o
-obj-y += pmic.o
-obj-y += internal_power_rail.o
+
+obj-$(CONFIG_MSM_PROC_COMM) += proc_comm.o
+ifndef CONFIG_ARCH_MSM8X60
+	obj-$(CONFIG_MSM_PROC_COMM) += clock-pcom.o internal_power_rail.o
+	obj-$(CONFIG_MSM_PROC_COMM) += vreg.o mpp.o
+	ifdef CONFIG_MSM_PROC_COMM
+		obj-$(CONFIG_DEBUG_FS) += pmic_debugfs.o
+	endif
+endif
 
 obj-$(CONFIG_ARCH_MSM_ARM11) += acpuclock.o timer.o gpio.o
 obj-$(CONFIG_ARCH_MSM_SCORPION) += timer.o gpio.o
+obj-$(CONFIG_ARCH_MSM_SCORPIONMP) += timer.o
+
+obj-$(CONFIG_ARCH_MSM_SCORPION) += msm_fault_handlers.o
 
 obj-$(CONFIG_MSM_VIC) += irq-vic.o
 
@@ -25,7 +26,8 @@ ifdef CONFIG_ARCH_QSD8X50
 	obj-$(CONFIG_MSM_SOC_REV_A) += acpuclock-8x50a.o
 endif
 
-obj-$(CONFIG_ARCH_MSM7X30) += acpuclock-7x30.o
+obj-$(CONFIG_SMP) += headsmp.o platsmp.o
+
 obj-$(CONFIG_MSM_CPU_AVS) += avs.o avs_hw.o
 obj-$(CONFIG_CPU_V6) += idle-v6.o
 obj-$(CONFIG_CPU_V7) += idle-v7.o
@@ -47,12 +49,16 @@ obj-$(CONFIG_MACH_TROUT) += board-trout-rfkill.o
 obj-$(CONFIG_MSM_SDIO_AL) += sdio_al.o
 obj-$(CONFIG_MSM_SDIO_AL_TEST) += sdio_al_test.o
 obj-$(CONFIG_MSM_SMD_LOGGING) += smem_log.o
-obj-$(CONFIG_MSM_SMD) += smd.o smd_debug.o remote_spinlock.o last_amsslog.o
+obj-$(CONFIG_MSM_SMD) += smd.o smd_debug.o remote_spinlock.o socinfo.o last_amsslog.o
+ifndef CONFIG_ARCH_MSM8X60
+	obj-$(CONFIG_MSM_SMD) += nand_partitions.o pmic.o
+	obj-$(CONFIG_MSM_ONCRPCROUTER) += rpc_hsusb.o rpc_pmapp.o rpc_fsusb.o
+endif
 obj-$(CONFIG_MSM_SMD_TTY) += smd_tty.o
 obj-$(CONFIG_MSM_SMD_QMI) += smd_qmi.o
-obj-$(CONFIG_MSM_SMD_CTL) += smd_ctl2.o
+obj-$(CONFIG_MSM_SMD_PKT) += smd_pkt.o
+obj-$(CONFIG_MSM_SDIO_CTL) += sdio_ctl.o
 obj-$(CONFIG_MSM_SMD_NMEA) += smd_nmea.o
-obj-$(CONFIG_DEBUG_FS) += pmic_debugfs.o
 obj-$(CONFIG_MSM_RESET_MODEM) += reset_modem.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter_device.o
@@ -78,10 +84,15 @@ obj-$(CONFIG_MSM_RPCSERVER_HANDSET) += rpc_server_handset.o
 obj-$(CONFIG_MSM_QDSP6) += qdsp6/
 obj-$(CONFIG_MSM8X60_AUDIO) += qdsp6v2/
 obj-$(CONFIG_MSM_HW3D) += hw3d.o
-ifdef CONFIG_MSM_N_WAY_SMSM
-	obj-$(CONFIG_PM) += pm2.o
+ifdef CONFIG_PM
+	obj-$(CONFIG_ARCH_MSM8X60) += pm-8x60.o
+	obj-$(CONFIG_ARCH_QSD8X50) += pm2.o
+	obj-$(CONFIG_ARCH_MSM7X30) += pm2.o
+	obj-$(CONFIG_ARCH_MSM7X27) += pm2.o
+	obj-$(CONFIG_ARCH_MSM7X25) += pm.o
+	obj-$(CONFIG_ARCH_MSM7X01A) += pm.o
 else
-	obj-$(CONFIG_PM) += pm.o
+	obj-y += no-pm.o
 endif
 obj-$(CONFIG_MSM_DMA_TEST) += dma_test.o
 obj-$(CONFIG_SURF_FFA_GPIO_KEYPAD) += keypad-surf-ffa.o
@@ -104,18 +115,46 @@ obj-$(CONFIG_ARCH_MSM8X60) += clock-local.o clock-8x60.o acpuclock-8x60.o
 obj-$(CONFIG_ARCH_MSM8X60) += clock-8x60_mxo.o clock-rpm.o spm.o restart.o
 obj-$(CONFIG_ARCH_MSM8X60) += subsystem-fatal-8x60.o
 obj-$(CONFIG_ARCH_MSM8X60) += saw-regulator.o
-obj-$(CONFIG_MSM_WATCHDOG) += msm_watchdog.o
+
+ifdef CONFIG_ARCH_MSM8X60
+	obj-$(CONFIG_CPU_IDLE) += cpuidle.o
+	obj-$(CONFIG_MSM_WATCHDOG) += msm_watchdog.o
+endif
+
+obj-$(CONFIG_MACH_MSM8X60_RUMI3) += board-msm8x60.o
+obj-$(CONFIG_MACH_MSM8X60_SIM) += board-msm8x60.o
+obj-$(CONFIG_MACH_MSM8X60_SURF) += board-msm8x60.o
+obj-$(CONFIG_MACH_MSM8X60_FFA) += board-msm8x60.o
 obj-$(CONFIG_TROUT_H2W) += board-trout-h2w.o
 obj-$(CONFIG_TROUT_BATTCHG) += htc_battery.o
 obj-$(CONFIG_TROUT_PWRSINK) += htc_pwrsink.o
-obj-$(CONFIG_MACH_MSM7X27_SURF) += board-msm7x27.o
-obj-$(CONFIG_MACH_MSM7X27_FFA) += board-msm7x27.o
-obj-$(CONFIG_ARCH_MSM7X30) += board-msm7x30.o clock-7x30.o
-obj-$(CONFIG_ARCH_MSM7X25) += board-msm7x27.o
+obj-$(CONFIG_ARCH_MSM7X27) += board-msm7x27.o devices-msm7x27.o
+obj-$(CONFIG_ARCH_MSM7X30) += devices-msm7x30.o
+obj-$(CONFIG_ARCH_MSM7X30) += clock-local.o clock-7x30.o acpuclock-7x30.o
+obj-$(CONFIG_ARCH_MSM7X25) += board-msm7x27.o devices-msm7x25.o
 
-obj-$(CONFIG_MACH_MSM7X27_ROBYN) += board-delta.o board-robyn-keypad.o
-obj-$(CONFIG_MACH_MSM7X27_MIMMI) += board-delta.o board-mimmi-keypad.o
-obj-$(CONFIG_MACH_MSM7X27_SHAKIRA) += board-delta.o board-shakira-keypad.o
+obj-$(CONFIG_MACH_MSM7X30_SURF) += board-msm7x30.o 
+obj-$(CONFIG_MACH_MSM7X30_FFA) += board-msm7x30.o 
+obj-$(CONFIG_MACH_MSM7X30_FLUID) += board-msm7x30.o 
+obj-$(CONFIG_MACH_MSM8X55_SURF) += board-msm7x30.o 
+obj-$(CONFIG_MACH_MSM8X55_FFA) += board-msm7x30.o 
+obj-$(CONFIG_MACH_MSM8X55_SVLTE_FFA) += board-msm7x30.o 
+obj-$(CONFIG_MACH_MSM8X55_SVLTE_SURF) += board-msm7x30.o 
+
+obj-$(CONFIG_MACH_SEMC_ZEUS) += board-semc_zeus.o
+obj-$(CONFIG_MACH_SEMC_ANZU) += board-semc_mogami.o board-semc_mogami-rfkill.o keypad-anzu.o leds-anzu.o gpio-anzu.o charger-anzu.o
+obj-$(CONFIG_MACH_SEMC_HALLON) += board-semc_mogami.o board-semc_mogami-rfkill.o keypad-hallon.o leds-hallon.o gpio-hallon.o charger-hallon.o fpc_test-hallon.o
+obj-$(CONFIG_MACH_SEMC_IYOKAN) += board-semc_mogami.o board-semc_mogami-rfkill.o keypad-iyokan.o leds-iyokan.o gpio-iyokan.o charger-iyokan.o
+obj-$(CONFIG_MACH_SEMC_URUSHI) += board-semc_mogami.o board-semc_mogami-rfkill.o keypad-urushi.o leds-urushi.o gpio-urushi.o charger-urushi.o
+obj-$(CONFIG_MACH_SEMC_SMULTRON) += board-semc_mogami.o board-semc_mogami-rfkill.o keypad-smultron.o leds-smultron.o gpio-smultron.o charger-smultron.o
+obj-$(CONFIG_MACH_SEMC_MANGO) += board-semc_mogami.o board-semc_mogami-rfkill.o keypad-mango.o leds-mango.o gpio-mango.o charger-mango.o
+obj-$(CONFIG_MACH_SEMC_AKANE) += board-semc_mogami.o board-semc_mogami-rfkill.o keypad-akane.o leds-akane.o gpio-akane.o charger-akane.o keypad-pmic-mogami.o keypad-pmic-akane.o
+obj-$(CONFIG_MACH_SEMC_AZUSA) += board-semc_mogami.o board-semc_mogami-rfkill.o keypad-azusa.o leds-azusa.o gpio-azusa.o charger-azusa.o
+obj-$(CONFIG_MOGAMI_VIBRATOR) += vibrator-mogami.o
+
+obj-$(CONFIG_MACH_SEMC_ZEUS) += keypad-pmic-mogami.o keypad-pmic-zeus.o
+obj-$(CONFIG_MACH_SEMC_ZEUS) += keypad-zeus.o
+obj-$(CONFIG_MACH_SEMC_ZEUS) += board-semc_zeus-wifi.o board-semc_zeus-rfkill.o
 
 obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire.o board-sapphire-gpio.o
 obj-$(CONFIG_MACH_SAPPHIRE) += board-sapphire-keypad.o board-sapphire-panel.o
@@ -126,11 +165,47 @@ obj-$(CONFIG_TROUT_BATTCHG) += htc_battery.o
 
 obj-$(CONFIG_HTC_PWRSINK) += htc_pwrsink.o
 obj-$(CONFIG_HTC_HEADSET) += htc_headset.o
+obj-$(CONFIG_MSM_RMT_STORAGE_CLIENT) += rmt_storage_client.o
 obj-$(CONFIG_MSM_RMT_STORAGE_SERVER) += rmt_storage_server.o
 obj-$(CONFIG_PMIC8058) += pmic8058-gpio.o pmic8058-mpp.o
+obj-$(CONFIG_MSM_NPA) += npa.o npa_resources.o msm_pm_qos.o msm_reqs.o
+obj-$(CONFIG_MSM_NPA_REMOTE) += npa_remote.o
+obj-$(CONFIG_MSM_NPA_REMOTE_ONCRPC) += npa_remote_rpc_client.o
+obj-$(CONFIG_ARCH_MSM7X30) += spm.o
+obj-$(CONFIG_MSM_RPM) += rpm.o
+obj-$(CONFIG_MSM_RPM_LOG) += rpm_log.o
+obj-$(CONFIG_MSM_XO) += msm_xo.o
+
+obj-$(CONFIG_SMMU)		+= smmu_driver.o smmu_driver_enum.o
+obj-$(CONFIG_SMMU_8X60)		+= board-msm8x60-smmu.o
+obj-$(CONFIG_MSM_BUS_SCALING)	+= msm_bus_core.o
+ifdef CONFIG_MSM_V2_TLMM
+obj-y	+= tlmm-msm8660.o msm8660-gpio.o
+else
+obj-y	+= gpio.o
+endif
+
+obj-$(CONFIG_MSM7200A_TLMM)	+= tlmm-msm7200a.o
+obj-$(CONFIG_MSM8660_TLMM)	+= tlmm-msm8660.o msm8660-gpio.o
+obj-$(CONFIG_SEMC_RPC_SERVER_HANDSET) += semc_rpc_server_handset.o
+obj-$(CONFIG_ARCH_MSM7X27)	+= gpiomux.o gpiomux-7x00.o gpiomux-7x27.o
+obj-$(CONFIG_ARCH_MSM7X30)	+= gpiomux.o gpiomux-7x00.o gpiomux-7x30.o
+obj-$(CONFIG_ARCH_QSD8X50)	+= gpiomux.o gpiomux-7x00.o gpiomux-8x50.o
+obj-$(CONFIG_ARCH_MSM8X60)	+= gpiomux.o gpiomux-8x60.o
+
+ifdef CONFIG_MSM_RPC_OEM_RAPI
+	obj-$(CONFIG_BATTERY_SEMC_ARCH)	+= semc_battery_data.o
+endif
+
+ifdef CONFIG_ARCH_MSM7X30
+	obj-$(CONFIG_SIMPLE_REMOTE_PLATFORM) += simple_remote_msm7x30_pf.o
+endif
+
+obj-$(CONFIG_PMIC_TIME) += pmic_time.o
+
+obj-$(CONFIG_SEMC_MOGAMI_FELICA_SUPPORT) += semc_mogami_felica.o
 
 obj-$(CONFIG_SEMC_SEPORT_PLATFORM) += semc_seport_platform.o
-
 obj-$(CONFIG_DELTA_PROXIMITY_SENSOR) += proximity_platform_delta.o
 obj-$(CONFIG_SEMC_POWER) += semc_power_platform.o
 obj-$(CONFIG_MSM_MISC_MODEM_API) += misc_modem_api.o
@@ -145,4 +220,8 @@ obj-$(CONFIG_SEMC_LOW_BATT_SHUTDOWN) += semc_low_batt_shutdown.o
 
 obj-$(CONFIG_SEMC_RPC_SERVER_HANDSET) += semc_rpc_server_handset.o
 obj-$(CONFIG_MSM_SPM) += spm.o
-obj-$(CONFIG_PMIC_TIME) += pmic_time.o
+
+
+obj-y += generic_gpio.o
+obj-$(CONFIG_MSM_CPU_FREQ_SCREEN) += cpufreq.o
+obj-$(CONFIG_MSM_WATCHDOG) += msm_watchdog.o

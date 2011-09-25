@@ -1,6 +1,7 @@
 /* arch/arm/mach-msm/proc_comm.h
  *
  * Copyright (c) 2007-2009, Code Aurora Forum. All rights reserved.
+ * Copyright   2010 Sony Ericsson Mobile Communications Inc.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -135,6 +136,9 @@ enum {
 	PCOM_CLKCTL_RPC_RAIL_DISABLE,
 	PCOM_CLKCTL_RPC_RAIL_CONTROL,
 	PCOM_CLKCTL_RPC_MIN_MSMC1,
+	PCOM_CLKCTL_RPC_SRC_REQUEST,
+	PCOM_NPA_INIT,
+	PCOM_NPA_ISSUE_REQUIRED_REQUEST,
 };
 
 enum {

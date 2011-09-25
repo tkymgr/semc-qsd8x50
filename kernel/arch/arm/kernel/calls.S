@@ -81,7 +81,7 @@
 		CALL(sys_ni_syscall)		/* was sys_ssetmask */
 /* 70 */	CALL(sys_setreuid16)
 		CALL(sys_setregid16)
-		CALL(sys_sigsuspend_wrapper)
+		CALL(sys_sigsuspend)
 		CALL(sys_sigpending)
 		CALL(sys_sethostname)
 /* 75 */	CALL(sys_setrlimit)
@@ -188,7 +188,7 @@
 		CALL(sys_rt_sigpending)
 		CALL(sys_rt_sigtimedwait)
 		CALL(sys_rt_sigqueueinfo)
-		CALL(sys_rt_sigsuspend_wrapper)
+		CALL(sys_rt_sigsuspend)
 /* 180 */	CALL(ABI(sys_pread64, sys_oabi_pread64))
 		CALL(ABI(sys_pwrite64, sys_oabi_pwrite64))
 		CALL(sys_chown16)
@@ -370,6 +370,8 @@
 		CALL(sys_dup3)
 		CALL(sys_pipe2)
 /* 360 */	CALL(sys_inotify_init1)
+		CALL(sys_preadv)
+		CALL(sys_pwritev)
 #ifndef syscalls_counted
 .equ syscalls_padding, ((NR_syscalls + 3) & ~3) - NR_syscalls
 #define syscalls_counted

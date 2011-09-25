@@ -22,6 +22,10 @@
 #include <linux/types.h>
 #include <linux/input.h>
 #include <linux/usb.h>
+#ifdef CONFIG_MACH_SEMC_ZEUS
+#include <linux/leds.h>
+#endif /* CONFIG_MACH_SEMC_ZEUS */
+#include <linux/leds-pmic8058.h>
 
 /* platform device data structures */
 struct msm_acpu_clock_platform_data {
@@ -45,10 +49,16 @@ struct msm_camera_io_ext {
 	uint32_t csiirq;
 };
 
+struct msm_camera_io_clk {
+	uint32_t mclk_clk_rate;
+	uint32_t vfe_clk_rate;
+};
+
 struct msm_camera_device_platform_data {
 	void (*camera_gpio_on) (void);
 	void (*camera_gpio_off)(void);
 	struct msm_camera_io_ext ioext;
+	struct msm_camera_io_clk ioclk;
 };
 enum msm_camera_csi_data_format {
 	CSI_8BIT,
@@ -93,10 +103,17 @@ struct msm_camera_sensor_pwr {
 
 #define MSM_CAMERA_FLASH_SRC_PMIC (0x00000001<<0)
 #define MSM_CAMERA_FLASH_SRC_PWM  (0x00000001<<1)
+#ifdef CONFIG_MACH_SEMC_ZEUS
+#define MSM_CAMERA_FLASH_SRC_LED  (0x00000001<<2)
+#endif /* CONFIG_MACH_SEMC_ZEUS */
 
 struct msm_camera_sensor_flash_pmic {
+	uint8_t num_of_src;
 	uint32_t low_current;
 	uint32_t high_current;
+	enum pmic8058_leds led_src_1;
+	enum pmic8058_leds led_src_2;
+	int (*pmic_set_current)(enum pmic8058_leds id, unsigned mA);
 };
 
 struct msm_camera_sensor_flash_pwm {
@@ -113,6 +130,9 @@ struct msm_camera_sensor_flash_src {
 	union {
 		struct msm_camera_sensor_flash_pmic pmic_src;
 		struct msm_camera_sensor_flash_pwm pwm_src;
+#ifdef CONFIG_MACH_SEMC_ZEUS
+		struct gpio_led_platform_data *gpio_led_src;
+#endif /* CONFIG_MACH_SEMC_ZEUS */
 	} _fsrc;
 };
 
@@ -121,13 +141,23 @@ struct msm_camera_sensor_flash_data {
 	struct msm_camera_sensor_flash_src *flash_src;
 };
 
+struct msm_camera_sensor_strobe_flash_data {
+	int flash_charge; /* pin for charge */
+	uint32_t flash_recharge_duration;
+	uint32_t irq;
+	spinlock_t spin_lock;
+	spinlock_t timer_lock;
+};
+
 struct msm_camera_sensor_info {
 	const char *sensor_name;
 	int sensor_reset;
+	int sub_sensor_reset;
 	int sensor_pwd;
 	int vcm_pwd;
 	int vcm_enable;
 	int mclk;
+	int flash_type;
 	struct msm_camera_device_platform_data *pdata;
 	struct resource *resource;
 	uint8_t num_resources;
@@ -223,12 +253,14 @@ struct msm_adspdec_database {
 };
 
 struct msm_panel_common_pdata {
+	uintptr_t hw_revision_addr;
 	int gpio;
 	int (*backlight_level)(int level, int max, int min);
 	int (*pmic_backlight)(int level);
 	int (*panel_num)(void);
 	void (*panel_config_gpio)(int);
 	int *gpio_num;
+	int mdp_core_clk_rate;
 };
 
 struct lcdc_platform_data {
@@ -249,6 +281,17 @@ struct mddi_platform_data {
 struct msm_fb_platform_data {
 	int (*detect_client)(const char *name);
 	int mddi_prescan;
+	int (*allow_set_offset)(void);
+};
+
+struct msm_hdmi_platform_data {
+	int irq;
+	int (*cable_detect)(int insert);
+	int (*comm_power)(int on, int show);
+	int (*enable_5v)(int on);
+	int (*core_power)(int on);
+	int (*cec_power)(int on);
+	int (*init_irq)(void);
 };
 
 struct msm_i2c_platform_data {
@@ -262,7 +305,19 @@ struct msm_i2c_platform_data {
 	int aux_dat;
 	const char *clk;
 	const char *pclk;
+	int src_clk_rate;
 	void (*msm_i2c_config_gpio)(int iface, int config_type);
+};
+
+enum msm_ssbi_controller_type {
+	MSM_SBI_CTRL_SSBI = 0,
+	MSM_SBI_CTRL_SSBI2,
+	MSM_SBI_CTRL_PMIC_ARBITER,
+};
+
+struct msm_ssbi_platform_data {
+	const char *rsl_id;
+	enum msm_ssbi_controller_type controller_type;
 };
 
 /* common init routines for use by arch/arm/mach-msm/board-*.c */
@@ -270,6 +325,7 @@ struct msm_i2c_platform_data {
 void __init msm_add_devices(void);
 void __init msm_map_common_io(void);
 void __init msm_map_qsd8x50_io(void);
+void __init msm_map_msm8x60_io(void);
 void __init msm_map_msm7x30_io(void);
 void __init msm_map_comet_io(void);
 void __init msm_init_irq(void);
@@ -292,13 +348,21 @@ static inline void msm_hsusb_set_vbus_state(int online) {}
 #endif
 
 void __init msm_snddev_init(void);
+void __init msm_snddev_init_timpani(void);
 void msm_snddev_poweramp_on(void);
 void msm_snddev_poweramp_off(void);
 void msm_snddev_hsed_pamp_on(void);
 void msm_snddev_hsed_pamp_off(void);
 void msm_snddev_tx_route_config(void);
 void msm_snddev_tx_route_deconfig(void);
+void msm_snddev_rx_route_config(void);
+void msm_snddev_rx_route_deconfig(void);
+void msm_snddev_enable_amic_power(void);
+void msm_snddev_disable_amic_power(void);
+void msm_snddev_enable_dmic_power(void);
+void msm_snddev_disable_dmic_power(void);
 
 extern unsigned int msm_shared_ram_phys; /* defined in arch/arm/mach-msm/io.c */
+
 
 #endif

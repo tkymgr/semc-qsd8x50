@@ -18,26 +18,22 @@
 
 #include <linux/types.h>
 #include <linux/spinlock.h>
-#include <linux/init.h>
 
-struct smem_heap_info
-{
+struct smem_heap_info {
 	unsigned initialized;
 	unsigned free_offset;
 	unsigned heap_remaining;
 	unsigned reserved;
 };
 
-struct smem_heap_entry
-{
+struct smem_heap_entry {
 	unsigned allocated;
 	unsigned offset;
 	unsigned size;
 	unsigned reserved;
 };
 
-struct smem_proc_comm
-{
+struct smem_proc_comm {
 	unsigned command;
 	unsigned status;
 	unsigned data1;
@@ -52,11 +48,11 @@ struct smem_proc_comm
 #define VERSION_MODEM_SBL 7
 #define VERSION_APPS      8
 #define VERSION_MODEM     9
+#define VERSION_DSPS      10
 
 #define SMD_HEAP_SIZE 512
 
-struct smem_shared
-{
+struct smem_shared {
 	struct smem_proc_comm proc_comm[4];
 	unsigned version[32];
 	struct smem_heap_info heap_info;
@@ -173,7 +169,7 @@ void smsm_notify_apps_crashdump(void);
 void smsm_ack_amss_crash(void);
 void smsm_notify_system_reboot(void);
 #endif
-extern void smsm_wait_for_modem(void) __init;
+extern void smsm_wait_for_modem(void);
 #ifdef CONFIG_CAPTURE_KERNEL
 void smsm_wait_for_modem_reset(void);
 #endif
@@ -192,6 +188,7 @@ enum {
 	SMEM_DIAG_ERR_MESSAGE,
 	SMEM_SPINLOCK_ARRAY,
 	SMEM_MEMORY_BARRIER_LOCATION,
+	SMEM_FIXED_ITEM_LAST = SMEM_MEMORY_BARRIER_LOCATION,
 
 	/* dynamic items */
 	SMEM_AARM_PARTITION_TABLE,

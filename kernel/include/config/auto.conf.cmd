@@ -407,12 +407,15 @@ deps_config := \
 	arch/arm/common/Kconfig \
 	arch/arm/Kconfig-nommu \
 	arch/arm/mm/Kconfig \
+	arch/arm/mach-bcmring/Kconfig \
 	arch/arm/mach-w90x900/Kconfig \
+	arch/arm/mach-u300/Kconfig \
 	arch/arm/mach-msm/Kconfig \
 	arch/arm/mach-ks8695/Kconfig \
 	arch/arm/mach-davinci/Kconfig \
 	arch/arm/mach-ns9xxx/Kconfig \
 	arch/arm/mach-netx/Kconfig \
+	arch/arm/mach-nomadik/Kconfig \
 	arch/arm/mach-mxc91231/Kconfig \
 	arch/arm/mach-mx25/Kconfig \
 	arch/arm/mach-mx3/Kconfig \
@@ -425,6 +428,8 @@ deps_config := \
 	arch/arm/mach-versatile/Kconfig \
 	arch/arm/mach-h720x/Kconfig \
 	arch/arm/mach-lh7a40x/Kconfig \
+	arch/arm/mach-s5pc100/Kconfig \
+	arch/arm/plat-stmp3xxx/Kconfig \
 	arch/arm/mach-s3c6410/Kconfig \
 	arch/arm/mach-s3c6400/Kconfig \
 	arch/arm/mach-s3c2443/Kconfig \
@@ -433,6 +438,7 @@ deps_config := \
 	arch/arm/mach-s3c2412/Kconfig \
 	arch/arm/mach-s3c2410/Kconfig \
 	arch/arm/mach-s3c2400/Kconfig \
+	arch/arm/plat-s5pc1xx/Kconfig \
 	arch/arm/plat-s3c/Kconfig \
 	arch/arm/plat-s3c64xx/Kconfig \
 	arch/arm/plat-s3c24xx/Kconfig \
@@ -442,6 +448,8 @@ deps_config := \
 	arch/arm/mach-omap1/Kconfig \
 	arch/arm/plat-omap/Kconfig \
 	arch/arm/mach-sa1100/Kconfig \
+	arch/arm/mach-mmp/Kconfig \
+	arch/arm/plat-pxa/Kconfig \
 	arch/arm/mach-pxa/Kconfig \
 	arch/arm/mach-mv78xx0/Kconfig \
 	arch/arm/mach-loki/Kconfig \
@@ -452,6 +460,7 @@ deps_config := \
 	arch/arm/mach-iop33x/Kconfig \
 	arch/arm/mach-iop32x/Kconfig \
 	arch/arm/mach-integrator/Kconfig \
+	arch/arm/mach-gemini/Kconfig \
 	arch/arm/mach-footbridge/Kconfig \
 	arch/arm/mach-ep93xx/Kconfig \
 	arch/arm/mach-clps711x/Kconfig \
