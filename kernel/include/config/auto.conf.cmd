@@ -25,6 +25,7 @@ deps_config := \
 	net/sunrpc/Kconfig \
 	fs/nfsd/Kconfig \
 	fs/nfs/Kconfig \
+	fs/exofs/Kconfig \
 	fs/ufs/Kconfig \
 	fs/sysv/Kconfig \
 	fs/romfs/Kconfig \
@@ -53,12 +54,16 @@ deps_config := \
 	fs/fat/Kconfig \
 	fs/udf/Kconfig \
 	fs/isofs/Kconfig \
+	fs/cachefiles/Kconfig \
+	fs/fscache/Kconfig \
 	fs/fuse/Kconfig \
 	fs/autofs4/Kconfig \
 	fs/autofs/Kconfig \
+	fs/quota/Kconfig \
 	fs/notify/inotify/Kconfig \
 	fs/notify/dnotify/Kconfig \
 	fs/notify/Kconfig \
+	fs/nilfs2/Kconfig \
 	fs/btrfs/Kconfig \
 	fs/ocfs2/Kconfig \
 	fs/gfs2/Kconfig \

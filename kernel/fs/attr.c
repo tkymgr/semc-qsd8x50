@@ -18,7 +18,7 @@
 /* Taken over from the old code... */
 
 /* POSIX UID/GID verification for setting inode attributes. */
-int inode_change_ok(struct inode *inode, struct iattr *attr)
+int inode_change_ok(const struct inode *inode, struct iattr *attr)
 {
 	int retval = -EPERM;
 	unsigned int ia_valid = attr->ia_valid;

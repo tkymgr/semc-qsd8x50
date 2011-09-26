@@ -1027,6 +1027,35 @@ out:
 EXPORT_SYMBOL(flush_old_exec);
 
 /*
+ * Prepare credentials and lock ->cred_guard_mutex.
+ * install_exec_creds() commits the new creds and drops the lock.
+ * Or, if exec fails before, free_bprm() should release ->cred and
+ * and unlock.
+ */
+int prepare_bprm_creds(struct linux_binprm *bprm)
+{
+	if (mutex_lock_interruptible(&current->cred_guard_mutex))
+		return -ERESTARTNOINTR;
+
+	bprm->cred = prepare_exec_creds();
+	if (likely(bprm->cred))
+		return 0;
+
+	mutex_unlock(&current->cred_guard_mutex);
+	return -ENOMEM;
+}
+
+void free_bprm(struct linux_binprm *bprm)
+{
+	free_arg_pages(bprm);
+	if (bprm->cred) {
+		mutex_unlock(&current->cred_guard_mutex);
+		abort_creds(bprm->cred);
+	}
+	kfree(bprm);
+}
+
+/*
  * install the new credentials for this executable
  */
 void install_exec_creds(struct linux_binprm *bprm)
@@ -1046,35 +1075,38 @@ EXPORT_SYMBOL(install_exec_creds);
 
 /*
  * determine how safe it is to execute the proposed program
- * - the caller must hold current->cred_exec_mutex to protect against
+ * - the caller must hold current->cred_guard_mutex to protect against
  *   PTRACE_ATTACH
  */
-void check_unsafe_exec(struct linux_binprm *bprm, struct files_struct *files)
+int check_unsafe_exec(struct linux_binprm *bprm)
 {
 	struct task_struct *p = current, *t;
-	unsigned long flags;
-	unsigned n_fs, n_files, n_sighand;
+	unsigned n_fs;
+	int res = 0;
 
 	bprm->unsafe = tracehook_unsafe_exec(p);
 
 	n_fs = 1;
-	n_files = 1;
-	n_sighand = 1;
-	lock_task_sighand(p, &flags);
+	write_lock(&p->fs->lock);
+	rcu_read_lock();
 	for (t = next_thread(p); t != p; t = next_thread(t)) {
 		if (t->fs == p->fs)
 			n_fs++;
-		if (t->files == files)
-			n_files++;
-		n_sighand++;
 	}
+	rcu_read_unlock();
 
-	if (atomic_read(&p->fs->count) > n_fs ||
-	    atomic_read(&p->files->count) > n_files ||
-	    atomic_read(&p->sighand->count) > n_sighand)
+	if (p->fs->users > n_fs) {
 		bprm->unsafe |= LSM_UNSAFE_SHARE;
+	} else {
+		res = -EAGAIN;
+		if (!p->fs->in_exec) {
+			p->fs->in_exec = 1;
+			res = 1;
+		}
+	}
+	write_unlock(&p->fs->lock);
 
-	unlock_task_sighand(p, &flags);
+	return res;
 }
 
 /* 
@@ -1251,14 +1283,6 @@ int search_binary_handler(struct linux_binprm *bprm,struct pt_regs *regs)
 
 EXPORT_SYMBOL(search_binary_handler);
 
-void free_bprm(struct linux_binprm *bprm)
-{
-	free_arg_pages(bprm);
-	if (bprm->cred)
-		abort_creds(bprm->cred);
-	kfree(bprm);
-}
-
 /*
  * sys_execve() executes a new program.
  */
@@ -1270,6 +1294,7 @@ int do_execve(char * filename,
 	struct linux_binprm *bprm;
 	struct file *file;
 	struct files_struct *displaced;
+	bool clear_in_exec;
 	int retval;
 
 	retval = unshare_files(&displaced);
@@ -1281,20 +1306,20 @@ int do_execve(char * filename,
 	if (!bprm)
 		goto out_files;
 
-	retval = mutex_lock_interruptible(&current->cred_exec_mutex);
-	if (retval < 0)
+	retval = prepare_bprm_creds(bprm);
+	if (retval)
 		goto out_free;
 
-	retval = -ENOMEM;
-	bprm->cred = prepare_exec_creds();
-	if (!bprm->cred)
-		goto out_unlock;
-	check_unsafe_exec(bprm, displaced);
+	retval = check_unsafe_exec(bprm);
+	if (retval < 0)
+		goto out_free;
+	clear_in_exec = retval;
+	current->in_execve = 1;
 
 	file = open_exec(filename);
 	retval = PTR_ERR(file);
 	if (IS_ERR(file))
-		goto out_unlock;
+		goto out_unmark;
 
 	sched_exec();
 
@@ -1336,8 +1361,11 @@ int do_execve(char * filename,
 	if (retval < 0)
 		goto out;
 
+	current->stack_start = current->mm->start_stack;
+
 	/* execve succeeded */
-	mutex_unlock(&current->cred_exec_mutex);
+	current->fs->in_exec = 0;
+	current->in_execve = 0;
 	acct_update_integrals(current);
 	free_bprm(bprm);
 	if (displaced)
@@ -1354,8 +1382,10 @@ out_file:
 		fput(bprm->file);
 	}
 
-out_unlock:
-	mutex_unlock(&current->cred_exec_mutex);
+out_unmark:
+	if (clear_in_exec)
+		current->fs->in_exec = 0;
+	current->in_execve = 0;
 
 out_free:
 	free_bprm(bprm);

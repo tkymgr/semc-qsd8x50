@@ -680,7 +680,7 @@ static void msm_pm_power_off(void)
 	for (;;) ;
 }
 
-static void msm_pm_restart(char str)
+static void msm_pm_restart(char str, const char *cmd)
 {
 	msm_rpcrouter_close();
 	msm_proc_comm(PCOM_RESET_CHIP, &restart_reason, 0);
