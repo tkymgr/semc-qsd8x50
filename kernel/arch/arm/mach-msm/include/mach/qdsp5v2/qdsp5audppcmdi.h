@@ -15,7 +15,7 @@ REFERENCES
 EXTERNALIZED FUNCTIONS
   None
 
-Copyright (c) 1992-2009, Code Aurora Forum. All rights reserved.
+Copyright(c) 1992-2010, Code Aurora Forum. All rights reserved.
 
 This software is licensed under the terms of the GNU General Public
 License version 2, as published by the Free Software Foundation, and
@@ -119,6 +119,26 @@ struct audpp_cmd_avsync{
 	unsigned short byte_counter_dlsw;
 	unsigned short byte_counter_dmsw;
 	unsigned short byte_counter_msw;
+} __attribute__((packed));
+
+/*
+ * Macros used to store the AV Sync Info from DSP
+ */
+
+#define AUDPP_AVSYNC_CH_COUNT 1
+#define AUDPP_AVSYNC_NUM_WORDS 6
+/* Timeout of 3000ms for AV Sync Query response */
+#define AUDPP_AVSYNC_EVENT_TIMEOUT 3000
+
+/*
+ * Command Structure to Query AVSync Info from DSP
+ */
+
+#define AUDPP_CMD_QUERY_AVSYNC	0x0006
+
+struct audpp_cmd_query_avsync{
+	unsigned short cmd_id;
+	unsigned short stream_id;
 } __attribute__((packed));
 
 /*
@@ -244,6 +264,12 @@ struct audpp_cmd_cfg_adec_params_wav {
 	sizeof(struct audpp_cmd_cfg_dev_mixer_params)
 
 #define AUDPP_CMD_CFG_DEV_MIXER            0x0008
+
+#define AUDPP_CMD_CFG_DEV_MIXER_ID_0       0
+#define AUDPP_CMD_CFG_DEV_MIXER_ID_1       1
+#define AUDPP_CMD_CFG_DEV_MIXER_ID_2       2
+#define AUDPP_CMD_CFG_DEV_MIXER_ID_3       3
+#define AUDPP_CMD_CFG_DEV_MIXER_ID_4       4
 
 #define AUDPP_CMD_CFG_DEV_MIXER_DEV_NONE   0x0000
 #define AUDPP_CMD_CFG_DEV_MIXER_DEV_0      0x0001
@@ -620,6 +646,15 @@ struct audpp_cmd_cfg_object_params_pcm {
 		struct filter_3			filter_3_params;
 		struct filter_4			filter_4_params;
 	} __attribute__((packed)) params_filter;
+} __attribute__((packed));
+
+#define AUDPP_CMD_CFG_CAL_GAIN_LEN sizeof(struct audpp_cmd_cfg_cal_gain)
+
+
+struct audpp_cmd_cfg_cal_gain {
+	struct audpp_cmd_cfg_object_params_common common;
+	unsigned short audppcalgain;
+	unsigned short reserved;
 } __attribute__((packed));
 
 

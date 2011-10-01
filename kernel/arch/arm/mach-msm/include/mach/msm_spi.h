@@ -27,7 +27,7 @@
  *
  */
 /*
- * SPI driver for Qualcomm QSD platforms.
+ * SPI driver for Qualcomm MSM platforms.
  */
 
 struct msm_spi_platform_data {

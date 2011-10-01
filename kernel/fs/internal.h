@@ -11,7 +11,6 @@
 
 struct super_block;
 struct linux_binprm;
-struct path;
 
 /*
  * block_dev.c
@@ -25,19 +24,12 @@ static inline int sb_is_blkdev_sb(struct super_block *sb)
 	return sb == blockdev_superblock;
 }
 
-extern int __sync_blockdev(struct block_device *bdev, int wait);
-
 #else
 static inline void bdev_cache_init(void)
 {
 }
 
 static inline int sb_is_blkdev_sb(struct super_block *sb)
-{
-	return 0;
-}
-
-static inline int __sync_blockdev(struct block_device *bdev, int wait)
 {
 	return 0;
 }
@@ -51,13 +43,12 @@ extern void __init chrdev_init(void);
 /*
  * exec.c
  */
-extern int check_unsafe_exec(struct linux_binprm *);
+extern void check_unsafe_exec(struct linux_binprm *, struct files_struct *);
 
 /*
  * namespace.c
  */
 extern int copy_mount_options(const void __user *, unsigned long *);
-extern int copy_mount_string(const void __user *, char **);
 
 extern void free_vfsmnt(struct vfsmount *);
 extern struct vfsmount *alloc_vfsmnt(const char *);
@@ -69,18 +60,3 @@ extern void umount_tree(struct vfsmount *, int, struct list_head *);
 extern struct vfsmount *copy_tree(struct vfsmount *, struct dentry *, int);
 
 extern void __init mnt_init(void);
-
-/*
- * fs_struct.c
- */
-extern void chroot_fs_refs(struct path *, struct path *);
-
-/*
- * file_table.c
- */
-extern void mark_files_ro(struct super_block *);
-
-/*
- * super.c
- */
-extern int do_remount_sb(struct super_block *, int, void *, int);

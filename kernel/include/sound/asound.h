@@ -23,9 +23,10 @@
 #ifndef __SOUND_ASOUND_H
 #define __SOUND_ASOUND_H
 
+#include <linux/types.h>
+
 #ifdef __KERNEL__
 #include <linux/ioctl.h>
-#include <linux/types.h>
 #include <linux/time.h>
 #include <asm/byteorder.h>
 
@@ -139,7 +140,7 @@ enum {
  *                                                                           *
  *****************************************************************************/
 
-#define SNDRV_PCM_VERSION		SNDRV_PROTOCOL_VERSION(2, 0, 9)
+#define SNDRV_PCM_VERSION		SNDRV_PROTOCOL_VERSION(2, 0, 10)
 
 typedef unsigned long snd_pcm_uframes_t;
 typedef signed long snd_pcm_sframes_t;
@@ -256,6 +257,7 @@ typedef int __bitwise snd_pcm_subformat_t;
 #define SNDRV_PCM_INFO_HALF_DUPLEX	0x00100000	/* only half duplex */
 #define SNDRV_PCM_INFO_JOINT_DUPLEX	0x00200000	/* playback and capture stream are somewhat correlated */
 #define SNDRV_PCM_INFO_SYNC_START	0x00400000	/* pcm support some kind of sync go */
+#define SNDRV_PCM_INFO_FIFO_IN_FRAMES	0x80000000	/* internal kernel flag - FIFO size is in frames */
 
 typedef int __bitwise snd_pcm_state_t;
 #define	SNDRV_PCM_STATE_OPEN		((__force snd_pcm_state_t) 0) /* stream is open */
@@ -342,7 +344,7 @@ struct snd_interval {
 #define SNDRV_MASK_MAX	256
 
 struct snd_mask {
-	u_int32_t bits[(SNDRV_MASK_MAX+31)/32];
+	__u32 bits[(SNDRV_MASK_MAX+31)/32];
 };
 
 struct snd_pcm_hw_params {
@@ -385,7 +387,7 @@ struct snd_pcm_sw_params {
 
 struct snd_pcm_channel_info {
 	unsigned int channel;
-	off_t offset;			/* mmap offset */
+	__kernel_off_t offset;		/* mmap offset */
 	unsigned int first;		/* offset to first sample in bits */
 	unsigned int step;		/* samples distance in bits */
 };
@@ -789,7 +791,7 @@ struct snd_ctl_elem_info {
 	snd_ctl_elem_type_t type;	/* R: value type - SNDRV_CTL_ELEM_TYPE_* */
 	unsigned int access;		/* R: value access (bitmask) - SNDRV_CTL_ELEM_ACCESS_* */
 	unsigned int count;		/* count of values */
-	pid_t owner;			/* owner's PID of this control */
+	__kernel_pid_t owner;		/* owner's PID of this control */
 	union {
 		struct {
 			long min;		/* R: minimum value */

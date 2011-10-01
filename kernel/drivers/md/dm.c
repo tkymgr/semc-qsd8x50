@@ -6,6 +6,7 @@
  */
 
 #include "dm.h"
+#include "dm-bio-list.h"
 #include "dm-uevent.h"
 
 #include <linux/init.h>

@@ -90,14 +90,14 @@ typedef struct pccard_io_map {
 	u_char	map;
 	u_char	flags;
 	u_short	speed;
-	u_int	start, stop;
+	phys_addr_t start, stop;
 } pccard_io_map;
 
 typedef struct pccard_mem_map {
 	u_char		map;
 	u_char		flags;
 	u_short		speed;
-	u_long		static_start;
+	phys_addr_t	static_start;
 	u_int		card_start;
 	struct resource	*res;
 } pccard_mem_map;
@@ -262,6 +262,8 @@ struct pcmcia_socket {
 	struct device			dev;
 	/* data internal to the socket driver */
 	void				*driver_data;
+	/* status of the card during resume from a system sleep state */
+	int				resume_status;
 };
 
 

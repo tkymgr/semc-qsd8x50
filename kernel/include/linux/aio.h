@@ -121,7 +121,7 @@ struct kiocb {
 
 	/*
 	 * If the aio_resfd field of the userspace iocb is not zero,
-	 * this is the underlying file* to deliver event to.
+	 * this is the underlying eventfd context to deliver events to.
 	 */
 	struct file		*ki_eventfd;
 };
@@ -224,8 +224,6 @@ static inline void exit_aio(struct mm_struct *mm) { }
 #endif /* CONFIG_AIO */
 
 #define io_wait_to_kiocb(wait) container_of(wait, struct kiocb, ki_wait)
-
-#include <linux/aio_abi.h>
 
 static inline struct kiocb *list_kiocb(struct list_head *h)
 {

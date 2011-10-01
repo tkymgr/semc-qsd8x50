@@ -20,6 +20,9 @@
  */
 #ifndef DCA_H
 #define DCA_H
+
+#include <linux/pci.h>
+
 /* DCA Provider API */
 
 /* DCA Notifier Interface */
@@ -34,6 +37,12 @@ struct dca_provider {
 	struct dca_ops		*ops;
 	struct device 		*cd;
 	int			 id;
+};
+
+struct dca_domain {
+	struct list_head	node;
+	struct list_head	dca_providers;
+	struct pci_bus		*pci_rc;
 };
 
 struct dca_ops {

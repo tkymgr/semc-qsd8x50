@@ -1,0 +1,211 @@
+    # performance tweaks for flash
+    write /sys/block/mtdblock3/bdi/read_ahead_kb 4
+    write /sys/block/mtdblock4/bdi/read_ahead_kb 4
+    write /sys/block/mtdblock5/bdi/read_ahead_kb 4
+
+service wpa_supplicant /system/bin/wpa_supplicant -Dawext -iwlan0 -c/data/misc/wifi/wpa_supplicant.conf
+    socket wlan0 dgram 660 wifi wifi
+    disabled
+    oneshot
+
+service dhcp-service /system/bin/netcfg eth0 dhcp
+	oneshot
+
+on property:dev.bootcomplete=1
+	stop dhcp-service
+	start dhcp-service
+
+service dhcpcd_wlan0 /system/bin/dhcpcd -BKL
+    disabled
+    oneshot
+
+service wlan_tool /system/bin/wlan_tool
+    socket wlan0 dgram 660 wifi wifi
+    disabled
+    oneshot
+
+service abtfilt /system/bin/abtfilt -d -z -n
+    disabled
+    oneshot
+
+on early-init
+    # Add qualcomm devices
+    device /dev/hw3d 0660 system graphics
+    device /dev/kgsl 0666 system graphics
+    device /dev/msm_rotator 0660 system graphics
+    device /dev/pmem_gpu* 0666 system graphics
+    device /dev/pmem_smipool 0660 system audio  
+    device /dev/msm_pcm_dec* 0666 system audio
+    device /dev/snd/controlC0* 0666 system audio
+    device /dev/msm_aac* 0660 system audio
+    device /dev/amrnb* 0660 system audio
+    device /dev/amrwb* 0660 system audio
+    device /dev/msm_qcelp* 0660 system audio
+    device /dev/evrc* 0660 system audio
+    device /dev/msm_voicememo* 0660 system audio
+    device /dev/msm_voice 0660 system audio
+    device /dev/es209ra_proximity 0660 system system
+    device /dev/semc_imx046_camera 0660 system system
+    #radio Fix
+    chown radio system /dev/oncrpc/30000016:d6bb93e6
+    chown radio system /dev/oncrpc/30000000:fd767954
+    chown radio system /dev/oncrpc/30000019:821a1945
+    chown radio system /dev/oncrpc/3000003c:beb78360
+    chown radio system /dev/oncrpc/30000003:d03123cc
+    chown radio system /dev/oncrpc/3000000e:00040000
+    chown radio system /dev/oncrpc/30000012:00010000
+
+on init
+    exec /system/bin/isp_fw_update
+
+on boot
+    chown bluetooth bluetooth /sys/module/bluetooth_power/parameters/power
+    chown bluetooth bluetooth /sys/class/rfkill/rfkill0/type
+    chown bluetooth bluetooth /sys/class/rfkill/rfkill0/state
+    chown bluetooth bluetooth /proc/bluetooth/sleep/proto
+    chown system system /sys/module/sco/parameters/disable_esco
+    chmod 0660 /sys/module/bluetooth_power/parameters/power
+    chmod 0660 /sys/class/rfkill/rfkill0/state
+    chmod 0660 /proc/bluetooth/sleep/proto
+    chown bluetooth bluetooth /dev/ttyHS1
+    chmod 0660 /dev/ttyHS1
+    chown system system /sys/bus/platform/devices/msm_sdcc.1/polling
+    chown system system /sys/bus/platform/devices/msm_sdcc.2/polling
+    chown system system /sys/bus/platform/devices/msm_sdcc.3/polling
+    chown system system /sys/bus/platform/devices/msm_sdcc.4/polling
+
+    # LV5219LG LED permissions
+    chown system system /sys/class/leds/lv5219lg:rgb1:red/brightness
+    chown system system /sys/class/leds/lv5219lg:rgb1:red/blink_on
+    chown system system /sys/class/leds/lv5219lg:rgb1:red/blink_off
+    chown system system /sys/class/leds/lv5219lg:rgb1:green/brightness
+    chown system system /sys/class/leds/lv5219lg:rgb1:green/blink_on
+    chown system system /sys/class/leds/lv5219lg:rgb1:green/blink_off
+    chown system system /sys/class/leds/lv5219lg:rgb1:blue/brightness
+    chown system system /sys/class/leds/lv5219lg:rgb1:blue/blink_on
+    chown system system /sys/class/leds/lv5219lg:rgb1:blue/blink_off
+    chown system system /sys/class/leds/lv5219lg:fled/brightness
+    chown system system /sys/class/leds/lv5219lg:mled/brightness
+    chown system system /sys/class/leds/lv5219lg:mled/als_enable
+    chown system system /sys/class/leds/lv5219lg:sled/brightness
+    chown system system /sys/class/leds/lv5219lg:fled/spotlight_enable
+    chmod 0666 /sys/class/leds/lv5219lg:fled/brightness
+
+    # Permission for ril
+    chown radio system /dev/pm_monitor
+    chmod 0770 /ddev/pm_monitor
+    chown radio system /dev/oncrpc/30000016:d6bb93e6
+    chown radio system /dev/oncrpc/30000000:fd767954
+    chown radio system /dev/oncrpc/30000019:821a1945
+    chown radio system /dev/oncrpc/3000003c:beb78360
+    chown radio system /dev/oncrpc/30000003:d03123cc
+    chown radio system /dev/oncrpc/3000000e:00040000
+    chown radio system /dev/oncrpc/30000012:00010000
+    mkdir /data/local
+    chmod 0777 /data/local
+    chown radio shell /data/local
+    mkdir /data/local/tmp
+    chmod 0777 /data/local/tmp
+    chown radio shell /data/local/tmp
+
+    # For qmuxd socket
+    mkdir /data/radio 0770 radio radio
+    chown radio radio 0770 /data/radio
+    chown radio system /dev/pm_monitor
+
+    # Sensors
+    chmod 0777 /dev/akm8973_aot
+    chmod 0777 /dev/akm8973_dev
+
+# Enable MASS storage on SDCARD
+#    write /sys/devices/platform/msm_hsusb/gadget/lun0/file /dev/block/mmcblk0
+    write /sys/bus/platform/drivers/msm_sdcc/msm_sdcc.1/polling 1   
+    write /sys/bus/platform/drivers/msm_sdcc/msm_sdcc.4/polling 1  
+
+on property:init.svc.bluetoothd=running
+    write /sys/devices/virtual/bluetooth/hci0/link_supervision_timeout 6400
+    write /sys/devices/virtual/bluetooth/hci0/idle_timeout 7000
+
+service factory_reset /system/bin/factory_reset
+    user root
+    disabled
+
+service hci_qcomm_init /system/bin/log -t qcom-bluetooth -p i "hci_qcomm_init service requested"
+    user bluetooth
+    group bluetooth net_bt_admin
+    disabled
+    oneshot
+
+service wlan_mac /system/bin/wlan_mac
+    user root
+    oneshot
+
+service qmuxd /system/bin/qmuxd &
+
+service hciattach /system/bin/sh /system/etc/init.bt.sh
+    user root
+    group qcom_oncrpc bluetooth net_bt_admin system sdcard_rw
+    disabled
+    oneshot
+    
+#service hciattach /system/bin/sh /system/etc/init.es209ra.bt.sh
+#    user root
+#    group qcom_oncrpc bluetooth net_bt_admin system sdcard_rw
+#    disabled
+#    oneshot
+
+service hcid /system/bin/hcid -s -n -f /etc/bluez/hcid.conf
+    socket bluetooth stream 660 bluetooth bluetooth
+    socket dbus_bluetooth stream 660 bluetooth bluetooth
+    # init.rc does not yet support applying capabilities, so run as root and
+    # let hcid drop uid to bluetooth with the right linux capabilities
+    group bluetooth net_bt_admin misc
+    disabled
+
+service updatemiscta /system/bin/updatemiscta
+    user root
+    oneshot
+
+service dbus_bt /system/bin/sh /etc/dbus_bt/dbus_bt.sh
+    user bluetooth
+    group bluetooth net_bt_admin system sdcard_rw
+    disabled
+    oneshot
+
+service akmd2 /system/bin/akmd2
+    user compass
+    group compass misc input system
+
+service es209ra-postboot /system/bin/sh /init.es209ra.post_boot.sh
+    user root
+    oneshot
+
+on property:dev.bootdone=1
+    start es209ra-postboot
+
+service hw_config /system/bin/sh /system/etc/hw_config.sh
+    user root
+    oneshot
+
+# AT+CTSA and AT+CKPD support
+service atfwd-daemon /system/bin/atfwd-daemon
+    user root
+
+#on property:dev.bootcomplete=1
+#    start atfwd-daemon
+
+on property:kernel.log=logcat
+   stop klogrouterd
+   start klogrouterd
+
+on property:kernel.log=uart
+   stop klogrouterd
+   exec /system/bin/klogrouter uart
+
+on property:kernel.log=default
+   stop klogrouterd
+   exec /system/bin/klogrouter default
+
+service klogrouterd /system/bin/klogrouter logcat
+    oneshot
+    disabled

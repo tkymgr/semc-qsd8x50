@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2009-2010, Code Aurora Forum. All rights reserved.
  * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -20,6 +20,9 @@
 #ifndef __LINUX_MSM_CAMERA_H
 #define __LINUX_MSM_CAMERA_H
 
+#ifdef MSM_CAMERA_BIONIC
+#include <sys/types.h>
+#endif
 #include <linux/types.h>
 #include <asm/sizes.h>
 #include <linux/ioctl.h>
@@ -92,6 +95,45 @@
 #define MSM_CAM_IOCTL_SENSOR_IO_CFG \
 	_IOW(MSM_CAM_IOCTL_MAGIC, 21, struct sensor_cfg_data *)
 
+#define MSM_CAM_IOCTL_FLASH_LED_CFG \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 22, unsigned *)
+
+#define MSM_CAM_IOCTL_UNBLOCK_POLL_FRAME \
+	_IO(MSM_CAM_IOCTL_MAGIC, 23)
+
+#define MSM_CAM_IOCTL_CTRL_COMMAND_2 \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 24, struct msm_ctrl_cmd *)
+
+#define MSM_CAM_IOCTL_AF_CTRL \
+	_IOR(MSM_CAM_IOCTL_MAGIC, 25, struct msm_ctrl_cmt_t *)
+
+#define MSM_CAM_IOCTL_AF_CTRL_DONE \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 26, struct msm_ctrl_cmt_t *)
+
+#define MSM_CAM_IOCTL_CONFIG_VPE \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 27, struct msm_camera_vpe_cfg_cmd *)
+
+#define MSM_CAM_IOCTL_AXI_VPE_CONFIG \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 28, struct msm_camera_vpe_cfg_cmd *)
+
+#define MSM_CAM_IOCTL_STROBE_FLASH_CFG \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 29, uint32_t *)
+
+#define MSM_CAM_IOCTL_STROBE_FLASH_CHARGE \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 30, uint32_t *)
+
+#define MSM_CAM_IOCTL_STROBE_FLASH_RELEASE \
+	_IO(MSM_CAM_IOCTL_MAGIC, 31)
+
+#define MSM_CAM_IOCTL_ERROR_CONFIG \
+	_IOW(MSM_CAM_IOCTL_MAGIC, 32, uint32_t *)
+
+#define MSM_CAM_IOCTL_ABORT_CAPTURE \
+	_IO(MSM_CAM_IOCTL_MAGIC, 33)
+
+#define MSM_CAM_IOCTL_ENABLE_OUTPUT_IND  \
+    _IOW(MSM_CAM_IOCTL_MAGIC, 34, uint32_t *)
+
 #define MSM_CAMERA_LED_OFF  0
 #define MSM_CAMERA_LED_LOW  1
 #define MSM_CAMERA_LED_HIGH 2
@@ -112,6 +154,7 @@
 
 #define MAX_SENSOR_NUM  3
 #define MAX_SENSOR_NAME 32
+#define MAX_MODULE_NAME 8 /* extension */
 
 #define PP_SNAP  0x01
 #define PP_RAW_SNAP ((0x01)<<1)
@@ -146,6 +189,15 @@ struct msm_vfe_evt_msg {
 	unsigned short type;	/* 1 == event (RPC), 0 == message (adsp) */
 	unsigned short msg_id;
 	unsigned int len;	/* size in, number of bytes out */
+	uint32_t frame_id;
+	void *data;
+};
+
+struct msm_vpe_evt_msg {
+	unsigned short type; /* 1 == event (RPC), 0 == message (adsp) */
+	unsigned short msg_id;
+	unsigned int len; /* size in, number of bytes out */
+	uint32_t frame_id;
 	void *data;
 };
 
@@ -263,9 +315,19 @@ struct msm_camera_cfg_cmd {
 #define CMD_STATS_IHIST_ENABLE 38
 #define CMD_STATS_RS_ENABLE 39
 #define CMD_STATS_CS_ENABLE 40
+#define CMD_AXI_CFG_O1_AND_O2 41  
+#define CMD_AXI_CFG_CONT_RAW_RGB 42
+#define CMD_VPE 43
+#define CMD_AXI_CFG_VPE 44
 
 /* vfe config command: config command(from config thread)*/
 struct msm_vfe_cfg_cmd {
+	int cmd_type;
+	uint16_t length;
+	void *value;
+};
+
+struct msm_vpe_cfg_cmd {
 	int cmd_type;
 	uint16_t length;
 	void *value;
@@ -292,8 +354,9 @@ struct camera_enable_cmd {
 #define MSM_PMEM_SKIN			13
 #define MSM_PMEM_VIDEO			14
 #define MSM_PMEM_PREVIEW		15
-#define MSM_PMEM_MAX			16
-
+#define MSM_PMEM_RGB_STREAM		16 /* extension */
+#define MSM_PMEM_VIDEO_VPE		17
+#define MSM_PMEM_MAX			18
 
 #define STAT_AEAW			0
 #define STAT_AEC			1
@@ -350,6 +413,7 @@ struct outputCfg {
 #define OUTPUT_TYPE_V		4
 
 struct msm_frame {
+	uint16_t fmt; /* extension */
 	struct timespec ts;
 	int path;
 	unsigned long buffer;
@@ -359,7 +423,10 @@ struct msm_frame {
 
 	void *cropinfo;
 	int croplen;
+	uint32_t error_code;
 };
+
+#define MSM_CAMERA_ERR_MASK (0xFFFFFFFF & 1)
 
 struct msm_stats_buf {
 	int type;
@@ -375,6 +442,7 @@ struct msm_stats_buf {
 #define MSM_V4L2_GET_CTRL	5
 #define MSM_V4L2_SET_CTRL	6
 #define MSM_V4L2_QUERY		7
+/* extension begin */
 #define MSM_V4L2_GET_CROP	8
 #define MSM_V4L2_SET_CROP	9
 #define MSM_V4L2_MAX		10
@@ -396,32 +464,32 @@ struct msm_snapshot_pp_status {
 	void *status;
 };
 
-#define CFG_SET_MODE			0
-#define CFG_SET_EFFECT			1
-#define CFG_START			2
-#define CFG_PWR_UP			3
-#define CFG_PWR_DOWN			4
+#define CFG_SET_MODE			    0
+#define CFG_SET_EFFECT			    1
+#define CFG_START			        2
+#define CFG_PWR_UP			        3
+#define CFG_PWR_DOWN			    4
 #define CFG_WRITE_EXPOSURE_GAIN		5
 #define CFG_SET_DEFAULT_FOCUS		6
-#define CFG_MOVE_FOCUS			7
+#define CFG_MOVE_FOCUS			    7
 #define CFG_REGISTER_TO_REAL_GAIN	8
 #define CFG_REAL_TO_REGISTER_GAIN	9
-#define CFG_SET_FPS			10
-#define CFG_SET_PICT_FPS		11
-#define CFG_SET_BRIGHTNESS		12
-#define CFG_SET_CONTRAST		13
-#define CFG_SET_ZOOM			14
+#define CFG_SET_FPS			        10
+#define CFG_SET_PICT_FPS		    11
+#define CFG_SET_BRIGHTNESS		    12
+#define CFG_SET_CONTRAST		    13
+#define CFG_SET_ZOOM			    14
 #define CFG_SET_EXPOSURE_MODE		15
-#define CFG_SET_WB			16
-#define CFG_SET_ANTIBANDING		17
-#define CFG_SET_EXP_GAIN		18
+#define CFG_SET_WB			        16
+#define CFG_SET_ANTIBANDING		    17
+#define CFG_SET_EXP_GAIN		    18
 #define CFG_SET_PICT_EXP_GAIN		19
 #define CFG_SET_LENS_SHADING		20
-#define CFG_GET_PICT_FPS		21
-#define CFG_GET_PREV_L_PF		22
-#define CFG_GET_PREV_P_PL		23
-#define CFG_GET_PICT_L_PF		24
-#define CFG_GET_PICT_P_PL		25
+#define CFG_GET_PICT_FPS		    21
+#define CFG_GET_PREV_L_PF		    22
+#define CFG_GET_PREV_P_PL		    23
+#define CFG_GET_PICT_L_PF		    24
+#define CFG_GET_PICT_P_PL		    25
 #define CFG_GET_AF_MAX_STEPS		26
 #define CFG_GET_PICT_MAX_EXP_LC		27
 #define CFG_SEND_WB_INFO		28

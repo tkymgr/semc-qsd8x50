@@ -23,7 +23,6 @@
 #include <linux/device.h>
 #include <linux/err.h>
 #include <linux/slab.h>
-#include <linux/ctype.h>
 
 #if 0
 #define DEBUGP printk
@@ -88,7 +87,7 @@ static char *next_arg(char *args, char **param, char **val)
 	}
 
 	for (i = 0; args[i]; i++) {
-		if (isspace(args[i]) && !in_quote)
+		if (args[i] == ' ' && !in_quote)
 			break;
 		if (equals == 0) {
 			if (args[i] == '=')
@@ -122,7 +121,7 @@ static char *next_arg(char *args, char **param, char **val)
 		next = args + i;
 
 	/* Chew up trailing spaces. */
-	while (isspace(*next))
+	while (*next == ' ')
 		next++;
 	return next;
 }
@@ -139,7 +138,7 @@ int parse_args(const char *name,
 	DEBUGP("Parsing ARGS: %s\n", args);
 
 	/* Chew leading spaces */
-	while (isspace(*args))
+	while (*args == ' ')
 		args++;
 
 	while (*args) {
@@ -218,15 +217,7 @@ int param_set_charp(const char *val, struct kernel_param *kp)
 		return -ENOSPC;
 	}
 
-	/* This is a hack.  We can't need to strdup in early boot, and we
-	 * don't need to; this mangled commandline is preserved. */
-	if (slab_is_available()) {
-		*(char **)kp->arg = kstrdup(val, GFP_KERNEL);
-		if (!*(char **)kp->arg)
-			return -ENOMEM;
-	} else
-		*(const char **)kp->arg = val;
-
+	*(char **)kp->arg = (char *)val;
 	return 0;
 }
 
@@ -235,63 +226,44 @@ int param_get_charp(char *buffer, struct kernel_param *kp)
 	return sprintf(buffer, "%s", *((char **)kp->arg));
 }
 
-/* Actually could be a bool or an int, for historical reasons. */
 int param_set_bool(const char *val, struct kernel_param *kp)
 {
-	bool v;
-
 	/* No equals means "set"... */
 	if (!val) val = "1";
 
 	/* One of =[yYnN01] */
 	switch (val[0]) {
 	case 'y': case 'Y': case '1':
-		v = true;
-		break;
+		*(int *)kp->arg = 1;
+		return 0;
 	case 'n': case 'N': case '0':
-		v = false;
-		break;
-	default:
-		return -EINVAL;
+		*(int *)kp->arg = 0;
+		return 0;
 	}
-
-	if (kp->flags & KPARAM_ISBOOL)
-		*(bool *)kp->arg = v;
-	else
-		*(int *)kp->arg = v;
-	return 0;
+	return -EINVAL;
 }
 
 int param_get_bool(char *buffer, struct kernel_param *kp)
 {
-	bool val;
-	if (kp->flags & KPARAM_ISBOOL)
-		val = *(bool *)kp->arg;
-	else
-		val = *(int *)kp->arg;
-
 	/* Y and N chosen as being relatively non-coder friendly */
-	return sprintf(buffer, "%c", val ? 'Y' : 'N');
+	return sprintf(buffer, "%c", (*(int *)kp->arg) ? 'Y' : 'N');
 }
 
-/* This one must be bool. */
 int param_set_invbool(const char *val, struct kernel_param *kp)
 {
-	int ret;
-	bool boolval;
+	int boolval, ret;
 	struct kernel_param dummy;
 
 	dummy.arg = &boolval;
-	dummy.flags = KPARAM_ISBOOL;
 	ret = param_set_bool(val, &dummy);
 	if (ret == 0)
-		*(bool *)kp->arg = !boolval;
+		*(int *)kp->arg = !boolval;
 	return ret;
 }
 
 int param_get_invbool(char *buffer, struct kernel_param *kp)
 {
-	return sprintf(buffer, "%c", (*(bool *)kp->arg) ? 'N' : 'Y');
+	return sprintf(buffer, "%c", (*(int *)kp->arg) ? 'N' : 'Y');
 }
 
 /* We break the rule and mangle the string. */
@@ -300,7 +272,6 @@ static int param_array(const char *name,
 		       unsigned int min, unsigned int max,
 		       void *elem, int elemsize,
 		       int (*set)(const char *, struct kernel_param *kp),
-		       u16 flags,
 		       unsigned int *num)
 {
 	int ret;
@@ -310,7 +281,6 @@ static int param_array(const char *name,
 	/* Get the name right for errors. */
 	kp.name = name;
 	kp.arg = elem;
-	kp.flags = flags;
 
 	/* No equals sign? */
 	if (!val) {
@@ -356,8 +326,7 @@ int param_array_set(const char *val, struct kernel_param *kp)
 	unsigned int temp_num;
 
 	return param_array(kp->name, val, 1, arr->max, arr->elem,
-			   arr->elemsize, arr->set, kp->flags,
-			   arr->num ?: &temp_num);
+			   arr->elemsize, arr->set, arr->num ?: &temp_num);
 }
 
 int param_array_get(char *buffer, struct kernel_param *kp)
@@ -601,11 +570,6 @@ void module_param_sysfs_remove(struct module *mod)
 	}
 }
 #endif
-
-void destroy_params(const struct kernel_param *params, unsigned num)
-{
-	/* FIXME: This should free kmalloced charp parameters.  It doesn't. */
-}
 
 static void __init kernel_add_sysfs_param(const char *name,
 					  struct kernel_param *kparam,

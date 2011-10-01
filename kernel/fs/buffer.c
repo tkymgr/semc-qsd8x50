@@ -52,7 +52,6 @@ init_buffer(struct buffer_head *bh, bh_end_io_t *handler, void *private)
 	bh->b_end_io = handler;
 	bh->b_private = private;
 }
-EXPORT_SYMBOL(init_buffer);
 
 static int sync_buffer(void *word)
 {
@@ -857,7 +856,7 @@ static int fsync_buffers_list(spinlock_t *lock, struct list_head *list)
 {
 	struct buffer_head *bh;
 	struct list_head tmp;
-	struct address_space *mapping, *prev_mapping = NULL;
+	struct address_space *mapping;
 	int err = 0, err2;
 
 	INIT_LIST_HEAD(&tmp);
@@ -882,18 +881,7 @@ static int fsync_buffers_list(spinlock_t *lock, struct list_head *list)
 				 * contents - it is a noop if I/O is still in
 				 * flight on potentially older contents.
 				 */
-				ll_rw_block(SWRITE_SYNC_PLUG, 1, &bh);
-
-				/*
-				 * Kick off IO for the previous mapping. Note
-				 * that we will not run the very last mapping,
-				 * wait_on_buffer() will do that for us
-				 * through sync_buffer().
-				 */
-				if (prev_mapping && prev_mapping != mapping)
-					blk_run_address_space(prev_mapping);
-				prev_mapping = mapping;
-
+				ll_rw_block(SWRITE_SYNC, 1, &bh);
 				brelse(bh);
 				spin_lock(lock);
 			}
@@ -3079,13 +3067,12 @@ void ll_rw_block(int rw, int nr, struct buffer_head *bhs[])
 	for (i = 0; i < nr; i++) {
 		struct buffer_head *bh = bhs[i];
 
-		if (rw == SWRITE || rw == SWRITE_SYNC || rw == SWRITE_SYNC_PLUG)
+		if (rw == SWRITE || rw == SWRITE_SYNC)
 			lock_buffer(bh);
 		else if (!trylock_buffer(bh))
 			continue;
 
-		if (rw == WRITE || rw == SWRITE || rw == SWRITE_SYNC ||
-		    rw == SWRITE_SYNC_PLUG) {
+		if (rw == WRITE || rw == SWRITE || rw == SWRITE_SYNC) {
 			if (test_clear_buffer_dirty(bh)) {
 				bh->b_end_io = end_buffer_write_sync;
 				get_bh(bh);
@@ -3106,7 +3093,6 @@ void ll_rw_block(int rw, int nr, struct buffer_head *bhs[])
 		unlock_buffer(bh);
 	}
 }
-EXPORT_SYMBOL(ll_rw_block);
 
 /*
  * For a data-integrity writeout, we need to wait upon any in-progress I/O
@@ -3443,7 +3429,9 @@ EXPORT_SYMBOL(file_fsync);
 EXPORT_SYMBOL(fsync_bdev);
 EXPORT_SYMBOL(generic_block_bmap);
 EXPORT_SYMBOL(generic_cont_expand_simple);
+EXPORT_SYMBOL(init_buffer);
 EXPORT_SYMBOL(invalidate_bdev);
+EXPORT_SYMBOL(ll_rw_block);
 EXPORT_SYMBOL(mark_buffer_dirty);
 EXPORT_SYMBOL(submit_bh);
 EXPORT_SYMBOL(sync_dirty_buffer);

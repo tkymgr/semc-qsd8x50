@@ -21,6 +21,15 @@
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
 
+/* on architectures without dma-mapping capabilities we need to ensure
+ * that the asynchronous path compiles away
+ */
+#ifdef CONFIG_HAS_DMA
+#define __async_inline
+#else
+#define __async_inline __always_inline
+#endif
+
 /**
  * dma_chan_ref - object used to manage dma channels received from the
  *   dmaengine core.
@@ -49,7 +58,8 @@ struct dma_chan_ref {
  * array.
  * @ASYNC_TX_ACK: immediately ack the descriptor, precludes setting up a
  * dependency chain
- * @ASYNC_TX_DEP_ACK: ack the dependency descriptor.  Useful for chaining.
+ * @ASYNC_TX_FENCE: specify that the next operation in the dependency
+ * chain uses this operation's result as an input
  */
 enum async_tx_flags {
 	ASYNC_TX_XOR_ZERO_DST	 = (1 << 0),
@@ -60,6 +70,24 @@ enum async_tx_flags {
 
 #ifdef CONFIG_DMA_ENGINE
 #define async_tx_issue_pending_all dma_issue_pending_all
+
+/**
+ * async_tx_issue_pending - send pending descriptor to the hardware channel
+ * @tx: descriptor handle to retrieve hardware context
+ *
+ * Note: any dependent operations will have already been issued by
+ * async_tx_channel_switch, or (in the case of no channel switch) will
+ * be already pending on this channel.
+ */
+static inline void async_tx_issue_pending(struct dma_async_tx_descriptor *tx)
+{
+	if (likely(tx)) {
+		struct dma_chan *chan = tx->chan;
+		struct dma_device *dma = chan->device;
+
+		dma->device_issue_pending(chan);
+	}
+}
 #ifdef CONFIG_ARCH_HAS_ASYNC_TX_FIND_CHANNEL
 #include <asm/async_tx.h>
 #else
@@ -71,6 +99,11 @@ __async_tx_find_channel(struct dma_async_tx_descriptor *depend_tx,
 #endif /* CONFIG_ARCH_HAS_ASYNC_TX_FIND_CHANNEL */
 #else
 static inline void async_tx_issue_pending_all(void)
+{
+	do { } while (0);
+}
+
+static inline void async_tx_issue_pending(struct dma_async_tx_descriptor *tx)
 {
 	do { } while (0);
 }

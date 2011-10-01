@@ -160,8 +160,7 @@ struct p9_client {
  * @qid: the &p9_qid server identifier this handle points to
  * @iounit: the server reported maximum transaction size for this file
  * @uid: the numeric uid of the local user who owns this handle
- * @aux: transport specific information (unused?)
- * @rdir_fpos: tracks offset of file position when reading directory contents
+ * @rdir: readdir accounting structure (allocated on demand)
  * @flist: per-client-instance fid tracking
  * @dlist: per-dentry fid tracking
  *

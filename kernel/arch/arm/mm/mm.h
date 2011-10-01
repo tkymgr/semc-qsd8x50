@@ -1,5 +1,3 @@
-/* the upper-most page table pointer */
-
 #ifdef CONFIG_MMU
 
 /* the upper-most page table pointer */

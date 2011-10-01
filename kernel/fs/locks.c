@@ -151,7 +151,7 @@ static struct file_lock *locks_alloc_lock(void)
 	return kmem_cache_alloc(filelock_cache, GFP_KERNEL);
 }
 
-void locks_release_private(struct file_lock *fl)
+static void locks_release_private(struct file_lock *fl)
 {
 	if (fl->fl_ops) {
 		if (fl->fl_ops->fl_release_private)
@@ -165,7 +165,6 @@ void locks_release_private(struct file_lock *fl)
 	}
 
 }
-EXPORT_SYMBOL_GPL(locks_release_private);
 
 /* Free a lock which is not in use. */
 static void locks_free_lock(struct file_lock *fl)
@@ -434,7 +433,7 @@ static int lease_mylease_callback(struct file_lock *fl, struct file_lock *try)
 	return fl->fl_file == try->fl_file;
 }
 
-static const struct lock_manager_operations lease_manager_ops = {
+static struct lock_manager_operations lease_manager_ops = {
 	.fl_break = lease_break_callback,
 	.fl_release_private = lease_release_private_callback,
 	.fl_mylease = lease_mylease_callback,
@@ -1591,7 +1590,7 @@ SYSCALL_DEFINE2(flock, unsigned int, fd, unsigned int, cmd)
 	if (can_sleep)
 		lock->fl_flags |= FL_SLEEP;
 
-	error = security_file_lock(filp, lock->fl_type);
+	error = security_file_lock(filp, cmd);
 	if (error)
 		goto out_free;
 

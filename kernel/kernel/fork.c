@@ -697,21 +697,38 @@ fail_nomem:
 	return retval;
 }
 
+static struct fs_struct *__copy_fs_struct(struct fs_struct *old)
+{
+	struct fs_struct *fs = kmem_cache_alloc(fs_cachep, GFP_KERNEL);
+	/* We don't need to lock fs - think why ;-) */
+	if (fs) {
+		atomic_set(&fs->count, 1);
+		rwlock_init(&fs->lock);
+		fs->umask = old->umask;
+		read_lock(&old->lock);
+		fs->root = old->root;
+		path_get(&old->root);
+		fs->pwd = old->pwd;
+		path_get(&old->pwd);
+		read_unlock(&old->lock);
+	}
+	return fs;
+}
+
+struct fs_struct *copy_fs_struct(struct fs_struct *old)
+{
+	return __copy_fs_struct(old);
+}
+
+EXPORT_SYMBOL_GPL(copy_fs_struct);
+
 static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
 {
-	struct fs_struct *fs = current->fs;
 	if (clone_flags & CLONE_FS) {
-		/* tsk->fs is already what we want */
-		write_lock(&fs->lock);
-		if (fs->in_exec) {
-			write_unlock(&fs->lock);
-			return -EAGAIN;
-		}
-		fs->users++;
-		write_unlock(&fs->lock);
+		atomic_inc(&current->fs->count);
 		return 0;
 	}
-	tsk->fs = copy_fs_struct(fs);
+	tsk->fs = __copy_fs_struct(current->fs);
 	if (!tsk->fs)
 		return -ENOMEM;
 	return 0;
@@ -1542,16 +1559,12 @@ static int unshare_fs(unsigned long unshare_flags, struct fs_struct **new_fsp)
 {
 	struct fs_struct *fs = current->fs;
 
-	if (!(unshare_flags & CLONE_FS) || !fs)
-		return 0;
-
-	/* don't need lock here; in the worst case we'll do useless copy */
-	if (fs->users == 1)
-		return 0;
-
-	*new_fsp = copy_fs_struct(fs);
-	if (!*new_fsp)
-		return -ENOMEM;
+	if ((unshare_flags & CLONE_FS) &&
+	    (fs && atomic_read(&fs->count) > 1)) {
+		*new_fsp = __copy_fs_struct(current->fs);
+		if (!*new_fsp)
+			return -ENOMEM;
+	}
 
 	return 0;
 }
@@ -1707,7 +1720,7 @@ bad_unshare_cleanup_sigh:
 
 bad_unshare_cleanup_fs:
 	if (new_fs)
-		free_fs_struct(new_fs);
+		put_fs_struct(new_fs);
 
 bad_unshare_cleanup_thread:
 bad_unshare_out:

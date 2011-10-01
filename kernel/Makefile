@@ -140,15 +140,13 @@ _all: modules
 endif
 
 srctree		:= $(if $(KBUILD_SRC),$(KBUILD_SRC),$(CURDIR))
-TOPDIR		:= $(srctree)
-# FIXME - TOPDIR is obsolete, use srctree/objtree
 objtree		:= $(CURDIR)
 src		:= $(srctree)
 obj		:= $(objtree)
 
 VPATH		:= $(srctree)$(if $(KBUILD_EXTMOD),:$(KBUILD_EXTMOD))
 
-export srctree objtree VPATH TOPDIR
+export srctree objtree VPATH
 
 
 # SUBARCH tells the usermode build what the underlying arch is.  That is set
@@ -200,6 +198,11 @@ endif
 # Additional ARCH settings for sparc
 ifeq ($(ARCH),sparc64)
        SRCARCH := sparc
+endif
+
+# Additional ARCH settings for sh
+ifeq ($(ARCH),sh64)
+       SRCARCH := sh
 endif
 
 # Where to locate arch specific headers
@@ -323,7 +326,7 @@ CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 MODFLAGS	= -DMODULE
 CFLAGS_MODULE   = $(MODFLAGS)
 AFLAGS_MODULE   = $(MODFLAGS)
-LDFLAGS_MODULE  =
+LDFLAGS_MODULE  = -T $(srctree)/scripts/module-common.lds
 CFLAGS_KERNEL	=
 AFLAGS_KERNEL	=
 
@@ -339,8 +342,8 @@ KBUILD_CPPFLAGS := -D__KERNEL__
 
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
-		   -Werror-implicit-function-declaration \
 		   -Wno-uninitialized \
+		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
 		   -fno-delete-null-pointer-checks
 KBUILD_AFLAGS   := -D__ASSEMBLY__
@@ -520,7 +523,7 @@ all: vmlinux
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS	+= -Os
 else
-KBUILD_CFLAGS	+= -O4
+KBUILD_CFLAGS	+= -O2
 endif
 
 include $(srctree)/arch/$(SRCARCH)/Makefile
@@ -590,9 +593,13 @@ endif
 
 # Use --build-id when available.
 LDFLAGS_BUILD_ID = $(patsubst -Wl$(comma)%,%,\
-			      $(call ld-option, -Wl$(comma)--build-id,))
+			      $(call cc-ldoption, -Wl$(comma)--build-id,))
 LDFLAGS_MODULE += $(LDFLAGS_BUILD_ID)
 LDFLAGS_vmlinux += $(LDFLAGS_BUILD_ID)
+
+ifeq ($(CONFIG_STRIP_ASM_SYMS),y)
+LDFLAGS_vmlinux	+= $(call ld-option, -X,)
+endif
 
 # Default kernel image to build when no specific target is given.
 # KBUILD_IMAGE may be overruled on the command line or
@@ -974,11 +981,6 @@ prepare0: archprepare FORCE
 
 # All the preparing..
 prepare: prepare0
-
-# Leave this as default for preprocessing vmlinux.lds.S, which is now
-# done in arch/$(ARCH)/kernel/Makefile
-
-export CPPFLAGS_vmlinux.lds += -P -C -U$(ARCH)
 
 # The asm symlink changes when $(ARCH) changes.
 # Detect this and ask user to run make mrproper

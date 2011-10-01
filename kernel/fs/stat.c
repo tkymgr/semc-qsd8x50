@@ -68,12 +68,6 @@ int vfs_stat_fd(int dfd, char __user *name, struct kstat *stat)
 	return error;
 }
 
-int vfs_stat(char __user *name, struct kstat *stat)
-{
-	return vfs_stat_fd(AT_FDCWD, name, stat);
-}
-
-EXPORT_SYMBOL(vfs_stat);
 
 int vfs_lstat_fd(int dfd, char __user *name, struct kstat *stat)
 {
@@ -88,13 +82,6 @@ int vfs_lstat_fd(int dfd, char __user *name, struct kstat *stat)
 	return error;
 }
 
-int vfs_lstat(char __user *name, struct kstat *stat)
-{
-	return vfs_lstat_fd(AT_FDCWD, name, stat);
-}
-
-EXPORT_SYMBOL(vfs_lstat);
-
 int vfs_fstat(unsigned int fd, struct kstat *stat)
 {
 	struct file *f = fget(fd);
@@ -106,8 +93,43 @@ int vfs_fstat(unsigned int fd, struct kstat *stat)
 	}
 	return error;
 }
-
 EXPORT_SYMBOL(vfs_fstat);
+
+int vfs_fstatat(int dfd, char __user *filename, struct kstat *stat, int flag)
+{
+	struct path path;
+	int error = -EINVAL;
+	int lookup_flags = 0;
+
+	if ((flag & ~AT_SYMLINK_NOFOLLOW) != 0)
+		goto out;
+
+	if (!(flag & AT_SYMLINK_NOFOLLOW))
+		lookup_flags |= LOOKUP_FOLLOW;
+
+	error = user_path_at(dfd, filename, lookup_flags, &path);
+	if (error)
+		goto out;
+
+	error = vfs_getattr(path.mnt, path.dentry, stat);
+	path_put(&path);
+out:
+	return error;
+}
+EXPORT_SYMBOL(vfs_fstatat);
+
+int vfs_stat(char __user *name, struct kstat *stat)
+{
+	return vfs_fstatat(AT_FDCWD, name, stat, 0);
+}
+EXPORT_SYMBOL(vfs_stat);
+
+int vfs_lstat(char __user *name, struct kstat *stat)
+{
+	return vfs_fstatat(AT_FDCWD, name, stat, AT_SYMLINK_NOFOLLOW);
+}
+EXPORT_SYMBOL(vfs_lstat);
+
 
 #ifdef __ARCH_WANT_OLD_STAT
 

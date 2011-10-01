@@ -574,6 +574,8 @@ struct hda_bus_ops {
 	/* attach a PCM stream */
 	int (*attach_pcm)(struct hda_bus *bus, struct hda_codec *codec,
 			  struct hda_pcm *pcm);
+	/* reset bus for retry verb */
+	void (*bus_reset)(struct hda_bus *bus);
 #ifdef CONFIG_SND_HDA_POWER_SAVE
 	/* notify power-up/down from codec to controller */
 	void (*pm_notify)(struct hda_bus *bus);
@@ -622,7 +624,13 @@ struct hda_bus {
 
 	/* misc op flags */
 	unsigned int needs_damn_long_delay :1;
+	unsigned int allow_bus_reset:1;	/* allow bus reset at fatal error */
+	unsigned int sync_write:1;	/* sync after verb write */
+	/* status for codec/controller */
 	unsigned int shutdown :1;	/* being unloaded */
+	unsigned int rirb_error:1;	/* error in codec communication */
+	unsigned int response_reset:1;	/* controller was reset */
+	unsigned int in_reset:1;	/* during reset operation */
 };
 
 /*
@@ -739,6 +747,7 @@ struct hda_codec {
 	hda_nid_t mfg;	/* MFG node id */
 
 	/* ids */
+	u32 function_id;
 	u32 vendor_id;
 	u32 subsystem_id;
 	u32 revision_id;
@@ -778,11 +787,14 @@ struct hda_codec {
 	unsigned short spdif_ctls;	/* SPDIF control bits */
 	unsigned int spdif_in_enable;	/* SPDIF input enable? */
 	hda_nid_t *slave_dig_outs; /* optional digital out slave widgets */
+	struct snd_array init_pins;	/* initial (BIOS) pin configurations */
+	struct snd_array driver_pins;	/* pin configs set by codec parser */
 
 #ifdef CONFIG_SND_HDA_HWDEP
 	struct snd_hwdep *hwdep;	/* assigned hwdep device */
 	struct snd_array init_verbs;	/* additional init verbs */
 	struct snd_array hints;		/* additional hints */
+	struct snd_array user_pins;	/* default pin configs to override */
 #endif
 
 	/* misc flags */
@@ -790,6 +802,9 @@ struct hda_codec {
 					     * status change
 					     * (e.g. Realtek codecs)
 					     */
+	unsigned int pin_amp_workaround:1; /* pin out-amp takes index
+					    * (e.g. Conexant codecs)
+					    */
 #ifdef CONFIG_SND_HDA_POWER_SAVE
 	unsigned int power_on :1;	/* current (global) power-state */
 	unsigned int power_transition :1; /* power-state in transition */
@@ -855,6 +870,18 @@ void snd_hda_codec_resume_cache(struct hda_codec *codec);
 #define snd_hda_sequence_write_cache	snd_hda_sequence_write
 #endif
 
+/* the struct for codec->pin_configs */
+struct hda_pincfg {
+	hda_nid_t nid;
+	unsigned int cfg;
+};
+
+unsigned int snd_hda_codec_get_pincfg(struct hda_codec *codec, hda_nid_t nid);
+int snd_hda_codec_set_pincfg(struct hda_codec *codec, hda_nid_t nid,
+			     unsigned int cfg);
+int snd_hda_add_pincfg(struct hda_codec *codec, struct snd_array *list,
+		       hda_nid_t nid, unsigned int cfg); /* for hwdep */
+
 /*
  * Mixer
  */
@@ -908,6 +935,13 @@ void snd_hda_power_down(struct hda_codec *codec);
 static inline void snd_hda_power_up(struct hda_codec *codec) {}
 static inline void snd_hda_power_down(struct hda_codec *codec) {}
 #define snd_hda_codec_needs_resume(codec) 1
+#endif
+
+#ifdef CONFIG_SND_HDA_PATCH_LOADER
+/*
+ * patch firmware
+ */
+int snd_hda_load_patch(struct hda_bus *bus, const char *patch);
 #endif
 
 /*

@@ -3,7 +3,6 @@
  *
  *  Copyright (C) 2004 ARM Limited.
  *  Written by Deep Blue Solutions Limited.
- *  Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -39,16 +38,75 @@ union vfp_state *last_VFP_context[NR_CPUS];
  */
 unsigned int VFP_arch;
 
+/*
+ * Per-thread VFP initialization.
+ */
+static void vfp_thread_flush(struct thread_info *thread)
+{
+	union vfp_state *vfp = &thread->vfpstate;
+	unsigned int cpu;
+
+	memset(vfp, 0, sizeof(union vfp_state));
+
+	vfp->hard.fpexc = FPEXC_EN;
+	vfp->hard.fpscr = FPSCR_ROUND_NEAREST;
+
+	/*
+	 * Disable VFP to ensure we initialize it first.  We must ensure
+	 * that the modification of last_VFP_context[] and hardware disable
+	 * are done for the same CPU and without preemption.
+	 */
+	cpu = get_cpu();
+	if (last_VFP_context[cpu] == vfp)
+		last_VFP_context[cpu] = NULL;
+	fmxr(FPEXC, fmrx(FPEXC) & ~FPEXC_EN);
+	put_cpu();
+}
+
+static void vfp_thread_exit(struct thread_info *thread)
+{
+	/* release case: Per-thread VFP cleanup. */
+	union vfp_state *vfp = &thread->vfpstate;
+	unsigned int cpu = get_cpu();
+
+	if (last_VFP_context[cpu] == vfp)
+		last_VFP_context[cpu] = NULL;
+	put_cpu();
+}
+
+/*
+ * When this function is called with the following 'cmd's, the following
+ * is true while this function is being run:
+ *  THREAD_NOFTIFY_SWTICH:
+ *   - the previously running thread will not be scheduled onto another CPU.
+ *   - the next thread to be run (v) will not be running on another CPU.
+ *   - thread->cpu is the local CPU number
+ *   - not preemptible as we're called in the middle of a thread switch
+ *  THREAD_NOTIFY_FLUSH:
+ *   - the thread (v) will be running on the local CPU, so
+ *	v === current_thread_info()
+ *   - thread->cpu is the local CPU number at the time it is accessed,
+ *	but may change at any time.
+ *   - we could be preempted if tree preempt rcu is enabled, so
+ *	it is unsafe to use thread->cpu.
+ *  THREAD_NOTIFY_EXIT
+ *   - the thread (v) will be running on the local CPU, so
+ *	v === current_thread_info()
+ *   - thread->cpu is the local CPU number at the time it is accessed,
+ *	but may change at any time.
+ *   - we could be preempted if tree preempt rcu is enabled, so
+ *	it is unsafe to use thread->cpu.
+ */
 static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 {
 	struct thread_info *thread = v;
-	union vfp_state *vfp;
-	u32 cpu = thread->cpu;
 
 	if (likely(cmd == THREAD_NOTIFY_SWITCH)) {
 		u32 fpexc = fmrx(FPEXC);
 
 #ifdef CONFIG_SMP
+		unsigned int cpu = thread->cpu;
+
 		/*
 		 * On SMP, if VFP is enabled, save the old state in
 		 * case the thread migrates to a different CPU. The
@@ -75,25 +133,10 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 		return NOTIFY_DONE;
 	}
 
-	vfp = &thread->vfpstate;
-	if (cmd == THREAD_NOTIFY_FLUSH) {
-		/*
-		 * Per-thread VFP initialisation.
-		 */
-		memset(vfp, 0, sizeof(union vfp_state));
-
-		vfp->hard.fpexc = FPEXC_EN;
-		vfp->hard.fpscr = FPSCR_ROUND_NEAREST;
-
-		/*
-		 * Disable VFP to ensure we initialise it first.
-		 */
-		fmxr(FPEXC, fmrx(FPEXC) & ~FPEXC_EN);
-	}
-
-	/* flush and release case: Per-thread VFP cleanup. */
-	if (last_VFP_context[cpu] == vfp)
-		last_VFP_context[cpu] = NULL;
+	if (cmd == THREAD_NOTIFY_FLUSH)
+		vfp_thread_flush(thread);
+	else
+		vfp_thread_exit(thread);
 
 	return NOTIFY_DONE;
 }
@@ -257,12 +300,14 @@ void VFP_bounce(u32 trigger, u32 fpexc, struct pt_regs *regs)
 	}
 
 	if (fpexc & FPEXC_EX) {
+#ifndef CONFIG_CPU_FEROCEON
 		/*
 		 * Asynchronous exception. The instruction is read from FPINST
 		 * and the interrupted instruction has to be restarted.
 		 */
 		trigger = fmrx(FPINST);
 		regs->ARM_pc -= 4;
+#endif
 	} else if (!(fpexc & FPEXC_DEX)) {
 		/*
 		 * Illegal combination of bits. It can be caused by an
@@ -380,13 +425,7 @@ void vfp_reinit(void)
 
 static int vfp_pm_suspend(struct sys_device *dev, pm_message_t state)
 {
-	int saved = vfp_flush_context();
-
-	if (saved)
-		printk(KERN_DEBUG "%s: saved vfp state\n", __func__);
-
-	/* clear any information we had about last context state */
-	memset(last_VFP_context, 0, sizeof(last_VFP_context));
+	vfp_flush_context();
 
 	return 0;
 }

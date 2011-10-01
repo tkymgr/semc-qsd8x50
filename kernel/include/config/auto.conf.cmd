@@ -25,7 +25,6 @@ deps_config := \
 	net/sunrpc/Kconfig \
 	fs/nfsd/Kconfig \
 	fs/nfs/Kconfig \
-	fs/exofs/Kconfig \
 	fs/ufs/Kconfig \
 	fs/sysv/Kconfig \
 	fs/romfs/Kconfig \
@@ -54,16 +53,12 @@ deps_config := \
 	fs/fat/Kconfig \
 	fs/udf/Kconfig \
 	fs/isofs/Kconfig \
-	fs/cachefiles/Kconfig \
-	fs/fscache/Kconfig \
 	fs/fuse/Kconfig \
 	fs/autofs4/Kconfig \
 	fs/autofs/Kconfig \
-	fs/quota/Kconfig \
 	fs/notify/inotify/Kconfig \
 	fs/notify/dnotify/Kconfig \
 	fs/notify/Kconfig \
-	fs/nilfs2/Kconfig \
 	fs/btrfs/Kconfig \
 	fs/ocfs2/Kconfig \
 	fs/gfs2/Kconfig \
@@ -76,30 +71,54 @@ deps_config := \
 	fs/ext3/Kconfig \
 	fs/ext2/Kconfig \
 	fs/Kconfig \
+	drivers/staging/iio/trigger/Kconfig \
+	drivers/staging/iio/light/Kconfig \
+	drivers/staging/iio/adc/Kconfig \
+	drivers/staging/iio/accel/Kconfig \
+	drivers/staging/iio/Kconfig \
+	drivers/staging/sep/Kconfig \
+	drivers/staging/rar/Kconfig \
+	drivers/staging/vme/devices/Kconfig \
+	drivers/staging/vme/bridges/Kconfig \
+	drivers/staging/vme/Kconfig \
+	drivers/staging/hv/Kconfig \
+	drivers/staging/udlfb/Kconfig \
+	drivers/staging/vt6656/Kconfig \
+	drivers/staging/vt6655/Kconfig \
+	drivers/staging/quatech_usb2/Kconfig \
+	drivers/staging/serqt_usb2/Kconfig \
+	drivers/staging/octeon/Kconfig \
+	drivers/gpu/drm/radeon/Kconfig \
+	drivers/staging/line6/Kconfig \
+	drivers/staging/p9auth/Kconfig \
+	drivers/staging/phison/Kconfig \
+	drivers/staging/b3dfg/Kconfig \
+	drivers/staging/pohmelfs/Kconfig \
+	drivers/staging/dst/Kconfig \
+	drivers/staging/dream/camera/Kconfig \
+	drivers/staging/dream/smd/Kconfig \
+	drivers/staging/dream/Kconfig \
 	drivers/staging/android/Kconfig \
-	drivers/staging/epl/Kconfig \
 	drivers/staging/frontier/Kconfig \
 	drivers/staging/mimio/Kconfig \
-	drivers/staging/rspiusb/Kconfig \
+	drivers/staging/rtl8192e/Kconfig \
+	drivers/staging/rtl8192su/Kconfig \
 	drivers/staging/rtl8187se/Kconfig \
 	drivers/staging/altpciechdma/Kconfig \
 	drivers/staging/panel/Kconfig \
 	drivers/staging/asus_oled/Kconfig \
 	drivers/staging/comedi/Kconfig \
+	drivers/staging/rt3090/Kconfig \
 	drivers/staging/rt2870/Kconfig \
 	drivers/staging/rt2860/Kconfig \
 	drivers/staging/otus/Kconfig \
-	drivers/staging/agnx/Kconfig \
 	drivers/staging/poch/Kconfig \
-	drivers/staging/at76_usb/Kconfig \
 	drivers/staging/echo/Kconfig \
 	drivers/staging/wlan-ng/Kconfig \
 	drivers/staging/winbond/Kconfig \
 	drivers/staging/usbip/Kconfig \
+	drivers/staging/cx25821/Kconfig \
 	drivers/staging/go7007/Kconfig \
-	drivers/staging/meilhaus/Kconfig \
-	drivers/staging/me4000/Kconfig \
-	drivers/staging/sxg/Kconfig \
 	drivers/staging/slicoss/Kconfig \
 	drivers/staging/et131x/Kconfig \
 	drivers/staging/Kconfig \
@@ -141,11 +160,14 @@ deps_config := \
 	drivers/hid/Kconfig \
 	sound/oss/Kconfig \
 	sound/soc/codecs/Kconfig \
+	sound/soc/txx9/Kconfig \
 	sound/soc/sh/Kconfig \
+	sound/soc/s6000/Kconfig \
 	sound/soc/s3c24xx/Kconfig \
 	sound/soc/pxa/Kconfig \
 	sound/soc/msm/Kconfig \
 	sound/soc/omap/Kconfig \
+	sound/soc/imx/Kconfig \
 	sound/soc/fsl/Kconfig \
 	sound/soc/davinci/Kconfig \
 	sound/soc/blackfin/Kconfig \
@@ -159,6 +181,7 @@ deps_config := \
 	sound/sh/Kconfig \
 	sound/mips/Kconfig \
 	sound/spi/Kconfig \
+	sound/atmel/Kconfig \
 	sound/arm/Kconfig \
 	sound/aoa/soundbus/Kconfig \
 	sound/aoa/codecs/Kconfig \
