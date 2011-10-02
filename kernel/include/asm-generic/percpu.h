@@ -1,6 +1,5 @@
 #ifndef _ASM_GENERIC_PERCPU_H_
 #define _ASM_GENERIC_PERCPU_H_
-
 #include <linux/compiler.h>
 #include <linux/threads.h>
 
@@ -73,33 +72,6 @@ extern void setup_per_cpu_areas(void);
 #define __raw_get_cpu_var(var)			per_cpu_var(var)
 
 #endif	/* SMP */
-
-#ifndef PER_CPU_BASE_SECTION
-#ifdef CONFIG_SMP
-#define PER_CPU_BASE_SECTION ".data.percpu"
-#else
-#define PER_CPU_BASE_SECTION ".data"
-#endif
-#endif
-
-#ifdef CONFIG_SMP
-
-#ifdef MODULE
-#define PER_CPU_SHARED_ALIGNED_SECTION ""
-#define PER_CPU_ALIGNED_SECTION ""
-#else
-#define PER_CPU_SHARED_ALIGNED_SECTION ".shared_aligned"
-#define PER_CPU_ALIGNED_SECTION ".shared_aligned"
-#endif
-#define PER_CPU_FIRST_SECTION ".first"
-
-#else
-
-#define PER_CPU_SHARED_ALIGNED_SECTION ""
-#define PER_CPU_ALIGNED_SECTION ".shared_aligned"
-#define PER_CPU_FIRST_SECTION ""
-
-#endif
 
 #ifndef PER_CPU_ATTRIBUTES
 #define PER_CPU_ATTRIBUTES

@@ -17,7 +17,6 @@
  *
  */
 
-#include <mach/debug_audio_mm.h>
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
@@ -40,6 +39,8 @@
 #include <mach/qdsp5/qdsp5audppmsg.h>
 #include <mach/qdsp5/qdsp5audplaycmdi.h>
 #include <mach/qdsp5/qdsp5audplaymsg.h>
+#include <mach/qdsp5/qdsp5rmtcmdi.h>
+#include <mach/debug_mm.h>
 
 #define BUFSZ 32768
 #define DMASZ (BUFSZ * 2)
@@ -559,6 +560,36 @@ static void audplay_config_hostpcm(struct audio *audio)
 
 }
 
+static int rmt_put_resource(struct audio *audio)
+{
+	struct aud_codec_config_cmd cmd;
+	unsigned short client_idx;
+
+	cmd.cmd_id = RM_CMD_AUD_CODEC_CFG;
+	cmd.client_id = RM_AUD_CLIENT_ID;
+	cmd.task_id = audio->dec_id;
+	cmd.enable = RMT_DISABLE;
+	cmd.dec_type = AUDDEC_DEC_AAC;
+	client_idx = ((cmd.client_id << 8) | cmd.task_id);
+
+	return put_adsp_resource(client_idx, &cmd, sizeof(cmd));
+}
+
+static int rmt_get_resource(struct audio *audio)
+{
+	struct aud_codec_config_cmd cmd;
+	unsigned short client_idx;
+
+	cmd.cmd_id = RM_CMD_AUD_CODEC_CFG;
+	cmd.client_id = RM_AUD_CLIENT_ID;
+	cmd.task_id = audio->dec_id;
+	cmd.enable = RMT_ENABLE;
+	cmd.dec_type = AUDDEC_DEC_AAC;
+	client_idx = ((cmd.client_id << 8) | cmd.task_id);
+
+	return get_adsp_resource(client_idx, &cmd, sizeof(cmd));
+}
+
 static void audplay_send_data(struct audio *audio, unsigned needed)
 {
 	struct buffer *frame;
@@ -918,7 +949,7 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			rc = wait_event_interruptible_timeout(audio->wait,
 				audio->dec_state != MSM_AUD_DECODER_STATE_NONE,
 				msecs_to_jiffies(MSM_AUD_DECODER_WAIT_MS));
-			MM_DBG("dec_state %d rc = %d\n", audio->dec_state, rc);
+			MM_INFO("dec_state %d rc = %d\n", audio->dec_state, rc);
 
 			if (audio->dec_state != MSM_AUD_DECODER_STATE_SUCCESS)
 				rc = -ENODEV;
@@ -1417,11 +1448,10 @@ static int audio_release(struct inode *inode, struct file *file)
 {
 	struct audio *audio = file->private_data;
 
-	MM_DBG("\n"); /* Macro prints the file name and function */
-
 	MM_INFO("audio instance 0x%08x freeing\n", (int)audio);
 	mutex_lock(&audio->lock);
 	audio_disable(audio);
+	rmt_put_resource(audio);
 	audio_flush(audio);
 	audio_flush_pcm_buf(audio);
 	msm_adsp_put(audio->audplay);
@@ -1611,9 +1641,9 @@ static int audio_open(struct inode *inode, struct file *file)
 			&audio->queue_id);
 
 	if (decid < 0) {
-		MM_ERR("No free decoder available\n");
+		MM_ERR("No free decoder available, freeing instance 0x%08x\n",
+				(int)audio);
 		rc = -ENODEV;
-		MM_INFO("audio instance 0x%08x freeing\n", (int)audio);
 		kfree(audio);
 		goto done;
 	}
@@ -1626,12 +1656,12 @@ static int audio_open(struct inode *inode, struct file *file)
 		if (!IS_ERR((void *)audio->phys)) {
 			audio->data = ioremap(audio->phys, pmem_sz);
 			if (!audio->data) {
-				MM_ERR("could not allocate write buffers\n");
+				MM_ERR("could not allocate write buffers, \
+						freeing instance 0x%08x\n",
+						(int)audio);
 				rc = -ENOMEM;
 				pmem_kfree(audio->phys);
 				audpp_adec_free(audio->dec_id);
-				MM_INFO("audio instance 0x%08x freeing\n",
-						(int)audio);
 				kfree(audio);
 				goto done;
 			}
@@ -1639,10 +1669,10 @@ static int audio_open(struct inode *inode, struct file *file)
 				0x%08x\n", audio->phys, (int)audio->data);
 			break;
 		} else if (pmem_sz == DMASZ_MIN) {
-			MM_ERR("could not allocate write buffers\n");
+			MM_ERR("could not allocate write buffers, freeing \
+					instance 0x%08x\n", (int)audio);
 			rc = -ENOMEM;
 			audpp_adec_free(audio->dec_id);
-			MM_INFO("audio instance 0x%08x freeing\n", (int)audio);
 			kfree(audio);
 			goto done;
 		} else
@@ -1653,25 +1683,25 @@ static int audio_open(struct inode *inode, struct file *file)
 	audio->read_phys = pmem_kalloc(PCM_BUFSZ_MIN * PCM_BUF_MAX_COUNT,
 				PMEM_MEMTYPE_EBI1|PMEM_ALIGNMENT_4K);
 	if (IS_ERR((void *)audio->read_phys)) {
-		MM_ERR("could not allocate read buffers\n");
+		MM_ERR("could not allocate read buffers, freeing instance \
+				0x%08x\n", (int)audio);
 		rc = -ENOMEM;
 		iounmap(audio->data);
 		pmem_kfree(audio->phys);
 		audpp_adec_free(audio->dec_id);
-		MM_INFO("audio instance 0x%08x freeing\n", (int)audio);
 		kfree(audio);
 		goto done;
 	}
 	audio->read_data = ioremap(audio->read_phys,
 				PCM_BUFSZ_MIN * PCM_BUF_MAX_COUNT);
 	if (!audio->read_data) {
-		MM_ERR("could not allocate read buffers\n");
+		MM_ERR("could not allocate read buffers, freeing instance \
+				0x%08x\n", (int)audio);
 		rc = -ENOMEM;
 		iounmap(audio->data);
 		pmem_kfree(audio->phys);
 		pmem_kfree(audio->read_phys);
 		audpp_adec_free(audio->dec_id);
-		MM_INFO("audio instance 0x%08x freeing\n", (int)audio);
 		kfree(audio);
 		goto done;
 	}
@@ -1680,16 +1710,30 @@ static int audio_open(struct inode *inode, struct file *file)
 
 	if (audio->pcm_feedback == TUNNEL_MODE_PLAYBACK) {
 		rc = audmgr_open(&audio->audmgr);
-		if (rc)
+		if (rc) {
+			MM_ERR("audmgr open failed, freeing instance \
+					0x%08x\n", (int)audio);
 			goto err;
+		}
 	}
 
 	rc = msm_adsp_get(audio->module_name, &audio->audplay,
 			  &audplay_adsp_ops_aac, audio);
 	if (rc) {
-		MM_ERR("failed to get %s module\n", audio->module_name);
+		MM_ERR("failed to get %s module, freeing instance 0x%08x\n",
+				audio->module_name, (int)audio);
 		if (audio->pcm_feedback == TUNNEL_MODE_PLAYBACK)
 			audmgr_close(&audio->audmgr);
+		goto err;
+	}
+
+	rc = rmt_get_resource(audio);
+	if (rc) {
+		MM_ERR("ADSP resources are not available for AAC session \
+			 0x%08x on decoder: %d\n", (int)audio, audio->dec_id);
+		if (audio->pcm_feedback == TUNNEL_MODE_PLAYBACK)
+			audmgr_close(&audio->audmgr);
+		msm_adsp_put(audio->audplay);
 		goto err;
 	}
 
@@ -1786,7 +1830,6 @@ err:
 	iounmap(audio->read_data);
 	pmem_kfree(audio->read_phys);
 	audpp_adec_free(audio->dec_id);
-	MM_INFO("audio instance 0x%08x freeing\n", (int)audio);
 	kfree(audio);
 	return rc;
 }

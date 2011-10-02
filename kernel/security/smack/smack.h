@@ -18,6 +18,9 @@
 #include <linux/security.h>
 #include <linux/in.h>
 #include <net/netlabel.h>
+#include <linux/list.h>
+#include <linux/rculist.h>
+#include <linux/lsm_audit.h>
 
 /*
  * Why 23? CIPSO is constrained to 30, so a 32 byte buffer is

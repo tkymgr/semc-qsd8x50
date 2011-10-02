@@ -3,7 +3,7 @@
  * Register/Interrupt access for userspace aDSP library.
  *
  * Copyright (C) 2008 Google, Inc.
- * Copyright (c) 2008-2009, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2008-2010, Code Aurora Forum. All rights reserved.
  * Author: Iliyan Malchev <ibm@android.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -24,7 +24,6 @@
  * - disallow access to non-associated queues
  */
 
-#include <mach/debug_adsp_mm.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
@@ -34,6 +33,7 @@
 #include <linux/uaccess.h>
 #include <linux/wait.h>
 #include <linux/wakelock.h>
+#include <mach/debug_mm.h>
 
 static struct wake_lock adsp_wake_lock;
 static inline void prevent_suspend(void)
@@ -110,11 +110,11 @@ static int32_t adsp_validate_queue(uint32_t mod_id, unsigned q_idx,
 			if (q_idx == sptr->mod_to_q_tbl[i].q_type) {
 				if (size <= sptr->mod_to_q_tbl[i].q_max_len)
 					return 0;
-				MM_INFO("q_idx: %d is not a valid queue \
+				MM_ERR("q_idx: %d is not a valid queue \
 					for module %x\n", q_idx, mod_id);
 				return -EINVAL;
 			}
-	MM_INFO("cmd_buf size is more than allowed size\n");
+	MM_ERR("cmd_buf size is more than allowed size\n");
 	return -EINVAL;
 }
 
@@ -280,7 +280,7 @@ int msm_adsp_get(const char *name, struct msm_adsp_module **out,
 			adsp_info.init_info_state == ADSP_STATE_INIT_INFO,
 			5 * HZ);
 		if (!rc) {
-			MM_INFO("INIT_INFO failed\n");
+			MM_ERR("INIT_INFO failed\n");
 			return -ETIMEDOUT;
 		}
 		init_info_cmd_sent++;
@@ -315,7 +315,7 @@ int msm_adsp_get(const char *name, struct msm_adsp_module **out,
 		goto done;
 	}
 
-	MM_INFO("module %s has been registered\n", module->name);
+	MM_DBG("module %s has been registered\n", module->name);
 
 done:
 	mutex_unlock(&module->lock);
@@ -403,13 +403,13 @@ int __msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 	}
 	if (adsp_validate_module(module->id)) {
 		spin_unlock_irqrestore(&adsp_write_lock, flags);
-		MM_INFO("module id validation failed %s  %d\n",
+		MM_ERR("module id validation failed %s  %d\n",
 				module->name, module->id);
 		return -ENXIO;
 	}
 	if (dsp_queue_addr >= QDSP_MAX_NUM_QUEUES) {
 		spin_unlock_irqrestore(&adsp_write_lock, flags);
-		MM_INFO("Invalid Queue Index: %d\n", dsp_queue_addr);
+		MM_ERR("Invalid Queue Index: %d\n", dsp_queue_addr);
 		return -ENXIO;
 	}
 	if (adsp_validate_queue(module->id, dsp_queue_addr, cmd_size)) {
@@ -550,9 +550,9 @@ int msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 								cmd_size);
 		if (rc == -EAGAIN)
 			udelay(10);
-	} while (rc == -EAGAIN && retries++ < 300);
+	} while (rc == -EAGAIN && retries++ < 100);
 	if (retries > 50)
-		pr_warning("adsp: %s command took %d attempts: rc %d\n",
+		MM_ERR("adsp: %s command took %d attempts: rc %d\n",
 			module->name, retries, rc);
 	return rc;
 }
@@ -644,8 +644,13 @@ static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
 		}
 
 		iptr->module_table_size = be32_to_cpu(sptr->module_table_size);
+#if CONFIG_ADSP_RPC_VER > 0x30001
 		if (iptr->module_table_size > MODULES_MAX)
 			iptr->module_table_size = MODULES_MAX;
+#else
+		if (iptr->module_table_size > ENTRIES_MAX)
+			iptr->module_table_size = ENTRIES_MAX;
+#endif
 		mptr = &sptr->module_entries[0];
 		for (i_no = 0; i_no < iptr->module_table_size; i_no++)
 			iptr->module_entries[i_no] = be32_to_cpu(mptr[i_no]);
@@ -674,7 +679,7 @@ static void handle_adsp_rtos_mtoa_app(struct rpc_request_hdr *req)
 	module_id = be32_to_cpu(pkt_ptr->module);
 	image     = be32_to_cpu(pkt_ptr->image);
 
-	MM_INFO("rpc event=%d, proc_id=%d, module=%d, image=%d\n",
+	MM_DBG("rpc event=%d, proc_id=%d, module=%d, image=%d\n",
 		event, proc_id, module_id, image);
 
 	module = find_adsp_module_by_id(&adsp_info, module_id);
@@ -739,8 +744,12 @@ static int handle_adsp_rtos_mtoa(struct rpc_request_hdr *req)
 					     req->xid,
 					     RPC_ACCEPTSTAT_SUCCESS);
 		break;
+#if CONFIG_ADSP_RPC_VER > 0x30001
 	case RPC_ADSP_RTOS_MTOA_INIT_INFO_PROC:
 	case RPC_ADSP_RTOS_MTOA_EVENT_INFO_PROC:
+#else
+	case RPC_ADSP_RTOS_MODEM_TO_APP_PROC:
+#endif
 		handle_adsp_rtos_mtoa_app(req);
 		break;
 	default:
@@ -1064,7 +1073,7 @@ static int msm_adsp_disable_locked(struct msm_adsp_module *module)
 		if (--adsp_open_count == 0) {
 			disable_irq(INT_ADSP);
 			allow_suspend();
-			MM_INFO("disable interrupt\n");
+			MM_DBG("disable interrupt\n");
 		}
 		mutex_unlock(&adsp_open_lock);
 	}
@@ -1164,6 +1173,7 @@ static int msm_adsp_probe(struct platform_device *pdev)
 	}
 
 	msm_adsp_publish_cdevs(adsp_modules, count);
+	rmtask_init();
 
 	return 0;
 
@@ -1196,8 +1206,13 @@ static int __init adsp_init(void)
 	rpc_adsp_rtos_atom_vers = 0x10001;
 	rpc_adsp_rtos_atom_vers_comp = 0x00010001;
 	rpc_adsp_rtos_mtoa_prog = 0x3000000b;
+#if CONFIG_ADSP_RPC_VER > 0x30001
 	rpc_adsp_rtos_mtoa_vers = 0x30002;
 	rpc_adsp_rtos_mtoa_vers_comp = 0x00030002;
+#else
+	rpc_adsp_rtos_mtoa_vers = 0x30001;
+	rpc_adsp_rtos_mtoa_vers_comp = 0x00030001;
+#endif
 
 	snprintf(msm_adsp_driver_name, sizeof(msm_adsp_driver_name),
 		"rs%08x",

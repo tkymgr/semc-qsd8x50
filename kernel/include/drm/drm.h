@@ -36,7 +36,8 @@
 #ifndef _DRM_H_
 #define _DRM_H_
 
-#include <linux/types.h>
+#if defined(__KERNEL__)
+#endif
 #include <asm/ioctl.h>		/* For _IO* macros */
 #define DRM_IOCTL_NR(n)		_IOC_NR(n)
 #define DRM_IOC_VOID		_IOC_NONE
@@ -496,8 +497,8 @@ union drm_wait_vblank {
  * \sa drmModesetCtl().
  */
 struct drm_modeset_ctl {
-	__u32 crtc;
-	__u32 cmd;
+	uint32_t crtc;
+	uint32_t cmd;
 };
 
 /**
@@ -573,29 +574,29 @@ struct drm_set_version {
 /** DRM_IOCTL_GEM_CLOSE ioctl argument type */
 struct drm_gem_close {
 	/** Handle of the object to be closed. */
-	__u32 handle;
-	__u32 pad;
+	uint32_t handle;
+	uint32_t pad;
 };
 
 /** DRM_IOCTL_GEM_FLINK ioctl argument type */
 struct drm_gem_flink {
 	/** Handle for the object being named */
-	__u32 handle;
+	uint32_t handle;
 
 	/** Returned global name */
-	__u32 name;
+	uint32_t name;
 };
 
 /** DRM_IOCTL_GEM_OPEN ioctl argument type */
 struct drm_gem_open {
 	/** Name of object being opened */
-	__u32 name;
+	uint32_t name;
 
 	/** Returned handle for the object */
-	__u32 handle;
+	uint32_t handle;
 
 	/** Returned size of the object */
-	__u64 size;
+	uint64_t size;
 };
 
 #include "drm_mode.h"

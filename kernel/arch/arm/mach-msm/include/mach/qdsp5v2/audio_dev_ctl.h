@@ -64,8 +64,9 @@ struct msm_snddev_info {
 	u32 sample_rate;
 	u32 set_sample_rate;
 	u32 sessions;
-	s32 max_voc_rx_vol;
-	s32 min_voc_rx_vol;
+	int usage_count;
+	s32 max_voc_rx_vol[VOC_RX_VOL_ARRAY_NUM]; /* [0] is for NB,[1] for WB */
+	s32 min_voc_rx_vol[VOC_RX_VOL_ARRAY_NUM];
 };
 
 struct msm_volume {
@@ -99,8 +100,9 @@ struct auddev_evt_voc_devinfo {
 	u32 dev_type;           /* Rx or Tx */
 	u32 acdb_dev_id;        /* acdb id of device */
 	u32 dev_sample;         /* Sample rate of device */
-	s32 max_rx_vol; 	/* unit is mb (milibel */
-	s32 min_rx_vol;		/* unit is mb */
+	s32 max_rx_vol[VOC_RX_VOL_ARRAY_NUM]; 	/* unit is mb (milibel),
+						[0] is for NB, other for WB */
+	s32 min_rx_vol[VOC_RX_VOL_ARRAY_NUM];	/* unit is mb */
 	u32 dev_id;             /* registered device id */
 };
 
@@ -186,7 +188,6 @@ struct msm_snd_evt_listner {
 };
 
 struct event_listner {
-	struct mutex listner_lock;
 	struct msm_snd_evt_listner *cb;
 	u32 num_listner;
 	int state; /* Call state */ /* TODO remove this if not req*/
@@ -200,6 +201,7 @@ int auddev_register_evt_listner(u32 evt_id, u32 clnt_type, u32 clnt_id,
 		void *private_data);
 int auddev_unregister_evt_listner(u32 clnt_type, u32 clnt_id);
 void mixer_post_event(u32 evt_id, u32 dev_id);
+void broadcast_event(u32 evt_id, u32 dev_id, u32 session_id);
 int msm_snddev_request_freq(int *freq, u32 session_id,
 			u32 capability, u32 clnt_type);
 int msm_snddev_withdraw_freq(u32 session_id,
@@ -209,4 +211,5 @@ int msm_get_voc_freq(int *tx_freq, int *rx_freq);
 int msm_snddev_get_enc_freq(int session_id);
 int msm_set_voice_vol(int dir, s32 volume);
 int msm_set_voice_mute(int dir, int mute);
+int msm_get_voice_state(void);
 #endif

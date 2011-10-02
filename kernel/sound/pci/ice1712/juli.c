@@ -345,8 +345,9 @@ static int juli_mute_put(struct snd_kcontrol *kcontrol,
 			new_gpio =  old_gpio &
 				~((unsigned int) kcontrol->private_value);
 	}
-	/* printk("JULI - mute/unmute: control_value: 0x%x, old_gpio: 0x%x, \
-		new_gpio 0x%x\n",
+	/* printk(KERN_DEBUG
+		"JULI - mute/unmute: control_value: 0x%x, old_gpio: 0x%x, "
+		"new_gpio 0x%x\n",
 		(unsigned int)ucontrol->value.integer.value[0], old_gpio,
 		new_gpio); */
 	if (old_gpio != new_gpio) {
@@ -503,6 +504,31 @@ static int __devinit juli_add_controls(struct snd_ice1712 *ice)
 }
 
 /*
+ * suspend/resume
+ * */
+
+#ifdef CONFIG_PM
+static int juli_resume(struct snd_ice1712 *ice)
+{
+	struct snd_akm4xxx *ak = ice->akm;
+	struct juli_spec *spec = ice->spec;
+	/* akm4358 un-reset, un-mute */
+	snd_akm4xxx_reset(ak, 0);
+	/* reinit ak4114 */
+	snd_ak4114_reinit(spec->ak4114);
+	return 0;
+}
+
+static int juli_suspend(struct snd_ice1712 *ice)
+{
+	struct snd_akm4xxx *ak = ice->akm;
+	/* akm4358 reset and soft-mute */
+	snd_akm4xxx_reset(ak, 1);
+	return 0;
+}
+#endif
+
+/*
  * initialize the chip
  */
 
@@ -645,6 +671,13 @@ static int __devinit juli_init(struct snd_ice1712 *ice)
 	ice->set_spdif_clock = juli_set_spdif_clock;
 
 	ice->spdif.ops.open = juli_spdif_in_open;
+
+#ifdef CONFIG_PM
+	ice->pm_resume = juli_resume;
+	ice->pm_suspend = juli_suspend;
+	ice->pm_suspend_enabled = 1;
+#endif
+
 	return 0;
 }
 

@@ -21,7 +21,6 @@
  * along with this program; if not, you can find it at http://www.fsf.org
  */
 
-#include <mach/debug_audio_mm.h>
 #include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
@@ -47,6 +46,7 @@
 #include <mach/qdsp5v2/qdsp5audplaymsg.h>
 #include <mach/qdsp5v2/audio_dev_ctl.h>
 #include <mach/qdsp5v2/audpp.h>
+#include <mach/debug_mm.h>
 
 /* Size must be power of 2 */
 #define BUFSZ_MAX 	4110	/* Includes meta in size */
@@ -171,6 +171,12 @@ struct audio {
 	spinlock_t event_queue_lock;
 	struct mutex get_event_lock;
 	int event_abort;
+	/* AV sync Info */
+	int avsync_flag;              /* Flag to indicate feedback from DSP */
+	wait_queue_head_t avsync_wait;/* Wait queue for AV Sync Message     */
+	/* flags, 48 bits sample/bytes counter per channel */
+	uint16_t avsync[AUDPP_AVSYNC_CH_COUNT * AUDPP_AVSYNC_NUM_WORDS + 1];
+
 	uint32_t device_events;
 
 	int eq_enable;
@@ -196,6 +202,7 @@ static int audio_enable(struct audio *audio)
 	if (audio->enabled)
 		return 0;
 
+	audio->dec_state = MSM_AUD_DECODER_STATE_NONE;
 	audio->out_tail = 0;
 	audio->out_needed = 0;
 
@@ -404,10 +411,8 @@ static void audio_dsp_event(void *private, unsigned id, uint16_t *msg)
 					POPP);
 			audpp_dsp_set_eq(audio->dec_id, audio->eq_enable,
 					&audio->eq, POPP);
-			audpp_avsync(audio->dec_id, 22050);
 		} else if (msg[0] == AUDPP_MSG_ENA_DIS) {
 			MM_DBG("CFG_MSG DISABLE\n");
-			audpp_avsync(audio->dec_id, 0);
 			audio->running = 0;
 		} else {
 			MM_DBG("CFG_MSG %d?\n", msg[0]);
@@ -429,6 +434,13 @@ static void audio_dsp_event(void *private, unsigned id, uint16_t *msg)
 		MM_DBG("PCMDMAMISSED\n");
 		audio->teos = 1;
 		wake_up(&audio->write_wait);
+		break;
+
+	case AUDPP_MSG_AVSYNC_MSG:
+		MM_DBG("AUDPP_MSG_AVSYNC_MSG\n");
+		memcpy(&audio->avsync[0], msg, sizeof(audio->avsync));
+		audio->avsync_flag = 1;
+		wake_up(&audio->avsync_wait);
 		break;
 
 	default:
@@ -652,6 +664,8 @@ static void audio_ioport_reset(struct audio *audio)
 	mutex_lock(&audio->read_lock);
 	audio_flush_pcm_buf(audio);
 	mutex_unlock(&audio->read_lock);
+	audio->avsync_flag = 1;
+	wake_up(&audio->avsync_wait);
 }
 
 static int audwma_events_pending(struct audio *audio)
@@ -758,6 +772,30 @@ static int audio_enable_eq(struct audio *audio, int enable)
 	return 0;
 }
 
+static int audio_get_avsync_data(struct audio *audio,
+						struct msm_audio_stats *stats)
+{
+	int rc = -EINVAL;
+	unsigned long flags;
+
+	local_irq_save(flags);
+	if (audio->dec_id == audio->avsync[0] && audio->avsync_flag) {
+		/* av_sync sample count */
+		stats->sample_count = (audio->avsync[2] << 16) |
+						(audio->avsync[3]);
+
+		/* av_sync byte_count */
+		stats->byte_count = (audio->avsync[5] << 16) |
+						(audio->avsync[6]);
+
+		audio->avsync_flag = 0;
+		rc = 0;
+	}
+	local_irq_restore(flags);
+	return rc;
+
+}
+
 static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct audio *audio = file->private_data;
@@ -771,11 +809,27 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	if (cmd == AUDIO_GET_STATS) {
 		struct msm_audio_stats stats;
-		stats.byte_count = audpp_avsync_byte_count(audio->dec_id);
-		stats.sample_count = audpp_avsync_sample_count(audio->dec_id);
-		if (copy_to_user((void *)arg, &stats, sizeof(stats)))
-			return -EFAULT;
-		return 0;
+
+		audio->avsync_flag = 0;
+		memset(&stats, 0, sizeof(stats));
+		if (audpp_query_avsync(audio->dec_id) < 0)
+			return rc;
+
+		rc = wait_event_interruptible_timeout(audio->avsync_wait,
+				(audio->avsync_flag == 1),
+				msecs_to_jiffies(AUDPP_AVSYNC_EVENT_TIMEOUT));
+
+		if (rc < 0)
+			return rc;
+		else if ((rc > 0) || ((rc == 0) && (audio->avsync_flag == 1))) {
+			if (audio_get_avsync_data(audio, &stats) < 0)
+				return rc;
+
+			if (copy_to_user((void *)arg, &stats, sizeof(stats)))
+				return -EFAULT;
+			return 0;
+		} else
+			return -EAGAIN;
 	}
 
 	switch (cmd) {
@@ -851,13 +905,12 @@ static long audio_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case AUDIO_START:
 		MM_DBG("AUDIO_START\n");
-		audio->dec_state = MSM_AUD_DECODER_STATE_NONE;
 		rc = audio_enable(audio);
 		if (!rc) {
 			rc = wait_event_interruptible_timeout(audio->wait,
 				audio->dec_state != MSM_AUD_DECODER_STATE_NONE,
 				msecs_to_jiffies(MSM_AUD_DECODER_WAIT_MS));
-			MM_DBG("dec_state %d rc = %d\n", audio->dec_state, rc);
+			MM_INFO("dec_state %d rc = %d\n", audio->dec_state, rc);
 
 			if (audio->dec_state != MSM_AUD_DECODER_STATE_SUCCESS)
 				rc = -ENODEV;
@@ -1374,7 +1427,6 @@ static int audio_release(struct inode *inode, struct file *file)
 {
 	struct audio *audio = file->private_data;
 
-	MM_DBG("\n"); /* Macro prints the file name and function */
 	MM_INFO("audio instance 0x%08x freeing\n", (int)audio);
 	mutex_lock(&audio->lock);
 	auddev_unregister_evt_listner(AUDDEV_CLNT_DEC, audio->dec_id);
@@ -1571,9 +1623,9 @@ static int audio_open(struct inode *inode, struct file *file)
 			&audio->queue_id);
 
 	if (decid < 0) {
-		MM_ERR("No free decoder available\n");
+		MM_ERR("No free decoder available, freeing instance 0x%08x\n",
+				(int)audio);
 		rc = -ENODEV;
-		MM_INFO("audio instance 0x%08x freeing\n", (int)audio);
 		kfree(audio);
 		goto done;
 	}
@@ -1586,12 +1638,12 @@ static int audio_open(struct inode *inode, struct file *file)
 		if (!IS_ERR((void *)audio->phys)) {
 			audio->data = ioremap(audio->phys, pmem_sz);
 			if (!audio->data) {
-				MM_ERR("could not allocate write buffers\n");
+				MM_ERR("could not allocate write buffers, \
+						freeing instance 0x%08x\n",
+						(int)audio);
 				rc = -ENOMEM;
 				pmem_kfree(audio->phys);
 				audpp_adec_free(audio->dec_id);
-				MM_INFO("audio instance 0x%08x freeing\n",
-						(int)audio);
 				kfree(audio);
 				goto done;
 			}
@@ -1599,11 +1651,10 @@ static int audio_open(struct inode *inode, struct file *file)
 				0x%08x\n", audio->phys, (int)audio->data);
 			break;
 		} else if (pmem_sz == DMASZ_MIN) {
-			MM_ERR("could not allocate write buffers\n");
+			MM_ERR("could not allocate write buffers, freeing \
+					instance 0x%08x\n", (int)audio);
 			rc = -ENOMEM;
 			audpp_adec_free(audio->dec_id);
-			MM_INFO("audio instance 0x%08x freeing\n",
-					(int)audio);
 			kfree(audio);
 			goto done;
 		} else
@@ -1614,7 +1665,8 @@ static int audio_open(struct inode *inode, struct file *file)
 	rc = msm_adsp_get(audio->module_name, &audio->audplay,
 			&audplay_adsp_ops_wma, audio);
 	if (rc) {
-		MM_ERR("failed to get %s module\n", audio->module_name);
+		MM_ERR("failed to get %s module, freeing instance 0x%08x\n",
+				audio->module_name, (int)audio);
 		goto err;
 	}
 
@@ -1630,6 +1682,7 @@ static int audio_open(struct inode *inode, struct file *file)
 	init_waitqueue_head(&audio->wait);
 	init_waitqueue_head(&audio->event_wait);
 	spin_lock_init(&audio->event_queue_lock);
+	init_waitqueue_head(&audio->avsync_wait);
 
 	audio->out[0].data = audio->data + 0;
 	audio->out[0].addr = audio->phys + 0;
@@ -1665,7 +1718,7 @@ static int audio_open(struct inode *inode, struct file *file)
 					wma_listner,
 					(void *)audio);
 	if (rc) {
-		MM_ERR("%s: failed to register listnet\n", __func__);
+		MM_ERR("%s: failed to register listner\n", __func__);
 		goto event_err;
 	}
 
@@ -1702,7 +1755,6 @@ err:
 	iounmap(audio->data);
 	pmem_kfree(audio->phys);
 	audpp_adec_free(audio->dec_id);
-	MM_INFO("audio instance 0x%08x freeing\n", (int)audio);
 	kfree(audio);
 	return rc;
 }

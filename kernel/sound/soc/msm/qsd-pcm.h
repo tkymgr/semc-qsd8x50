@@ -95,7 +95,6 @@ struct qsd_audio {
 	struct cad_buf_struct_type cbs;
 	atomic_t copy_count;
 	struct timer_list timer;	/* statistic timer */
-	unsigned long expiry_delta;
 };
 
 extern struct qsd_ctl qsd_glb_ctl;

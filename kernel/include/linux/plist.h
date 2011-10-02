@@ -96,10 +96,6 @@ struct plist_node {
 # define PLIST_HEAD_LOCK_INIT(_lock)
 #endif
 
-#define _PLIST_HEAD_INIT(head)				\
-	.prio_list = LIST_HEAD_INIT((head).prio_list),	\
-	.node_list = LIST_HEAD_INIT((head).node_list)
-
 /**
  * PLIST_HEAD_INIT - static struct plist_head initializer
  * @head:	struct plist_head variable name
@@ -107,7 +103,8 @@ struct plist_node {
  */
 #define PLIST_HEAD_INIT(head, _lock)			\
 {							\
-        _PLIST_HEAD_INIT(head),                         \
+	.prio_list = LIST_HEAD_INIT((head).prio_list),	\
+	.node_list = LIST_HEAD_INIT((head).node_list),	\
 	PLIST_HEAD_LOCK_INIT(&(_lock))			\
 }
 
@@ -119,7 +116,7 @@ struct plist_node {
 #define PLIST_NODE_INIT(node, __prio)			\
 {							\
 	.prio  = (__prio),				\
-	.plist = { _PLIST_HEAD_INIT((node).plist) }, 	\
+	.plist = PLIST_HEAD_INIT((node).plist, NULL),	\
 }
 
 /**

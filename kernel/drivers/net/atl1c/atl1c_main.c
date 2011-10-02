@@ -164,6 +164,24 @@ static inline void atl1c_irq_reset(struct atl1c_adapter *adapter)
 }
 
 /*
+ * atl1c_wait_until_idle - wait up to AT_HW_MAX_IDLE_DELAY reads
+ * of the idle status register until the device is actually idle
+ */
+static u32 atl1c_wait_until_idle(struct atl1c_hw *hw)
+{
+	int timeout;
+	u32 data;
+
+	for (timeout = 0; timeout < AT_HW_MAX_IDLE_DELAY; timeout++) {
+		AT_READ_REG(hw, REG_IDLE_STATUS, &data);
+		if ((data & IDLE_STATUS_MASK) == 0)
+			return 0;
+		msleep(1);
+	}
+	return data;
+}
+
+/*
  * atl1c_phy_config - Timer Call-back
  * @data: pointer to netdev cast into an unsigned long
  */
@@ -180,25 +198,10 @@ static void atl1c_phy_config(unsigned long data)
 
 void atl1c_reinit_locked(struct atl1c_adapter *adapter)
 {
-
 	WARN_ON(in_interrupt());
 	atl1c_down(adapter);
 	atl1c_up(adapter);
 	clear_bit(__AT_RESETTING, &adapter->flags);
-}
-
-static void atl1c_reset_task(struct work_struct *work)
-{
-	struct atl1c_adapter *adapter;
-	struct net_device *netdev;
-
-	adapter = container_of(work, struct atl1c_adapter, reset_task);
-	netdev = adapter->netdev;
-
-	netif_device_detach(netdev);
-	atl1c_down(adapter);
-	atl1c_up(adapter);
-	netif_device_attach(netdev);
 }
 
 static void atl1c_check_link_status(struct atl1c_adapter *adapter)
@@ -220,11 +223,11 @@ static void atl1c_check_link_status(struct atl1c_adapter *adapter)
 		/* link down */
 		if (netif_carrier_ok(netdev)) {
 			hw->hibernate = true;
-			atl1c_set_aspm(hw, false);
 			if (atl1c_stop_mac(hw) != 0)
 				if (netif_msg_hw(adapter))
 					dev_warn(&pdev->dev,
 						"stop mac failed\n");
+			atl1c_set_aspm(hw, false);
 		}
 		netif_carrier_off(netdev);
 	} else {
@@ -240,10 +243,10 @@ static void atl1c_check_link_status(struct atl1c_adapter *adapter)
 		    adapter->link_duplex != duplex) {
 			adapter->link_speed  = speed;
 			adapter->link_duplex = duplex;
+			atl1c_set_aspm(hw, true);
 			atl1c_enable_tx_ctrl(hw);
 			atl1c_enable_rx_ctrl(hw);
 			atl1c_setup_mac_ctrl(adapter);
-			atl1c_set_aspm(hw, true);
 			if (netif_msg_link(adapter))
 				dev_info(&pdev->dev,
 					"%s: %s NIC Link is Up<%d Mbps %s>\n",
@@ -255,18 +258,6 @@ static void atl1c_check_link_status(struct atl1c_adapter *adapter)
 		if (!netif_carrier_ok(netdev))
 			netif_carrier_on(netdev);
 	}
-}
-
-/*
- * atl1c_link_chg_task - deal with link change event Out of interrupt context
- * @netdev: network interface device structure
- */
-static void atl1c_link_chg_task(struct work_struct *work)
-{
-	struct atl1c_adapter *adapter;
-
-	adapter = container_of(work, struct atl1c_adapter, link_chg_task);
-	atl1c_check_link_status(adapter);
 }
 
 static void atl1c_link_chg_event(struct atl1c_adapter *adapter)
@@ -293,19 +284,39 @@ static void atl1c_link_chg_event(struct atl1c_adapter *adapter)
 			adapter->link_speed = SPEED_0;
 		}
 	}
-	schedule_work(&adapter->link_chg_task);
+
+	adapter->work_event |= ATL1C_WORK_EVENT_LINK_CHANGE;
+	schedule_work(&adapter->common_task);
 }
+
+static void atl1c_common_task(struct work_struct *work)
+{
+	struct atl1c_adapter *adapter;
+	struct net_device *netdev;
+
+	adapter = container_of(work, struct atl1c_adapter, common_task);
+	netdev = adapter->netdev;
+
+	if (adapter->work_event & ATL1C_WORK_EVENT_RESET) {
+		netif_device_detach(netdev);
+		atl1c_down(adapter);
+		atl1c_up(adapter);
+		netif_device_attach(netdev);
+		return;
+	}
+
+	if (adapter->work_event & ATL1C_WORK_EVENT_LINK_CHANGE)
+		atl1c_check_link_status(adapter);
+
+	return;
+}
+
 
 static void atl1c_del_timer(struct atl1c_adapter *adapter)
 {
 	del_timer_sync(&adapter->phy_config_timer);
 }
 
-static void atl1c_cancel_work(struct atl1c_adapter *adapter)
-{
-	cancel_work_sync(&adapter->reset_task);
-	cancel_work_sync(&adapter->link_chg_task);
-}
 
 /*
  * atl1c_tx_timeout - Respond to a Tx Hang
@@ -316,7 +327,8 @@ static void atl1c_tx_timeout(struct net_device *netdev)
 	struct atl1c_adapter *adapter = netdev_priv(netdev);
 
 	/* Do the reset outside of interrupt context */
-	schedule_work(&adapter->reset_task);
+	adapter->work_event |= ATL1C_WORK_EVENT_RESET;
+	schedule_work(&adapter->common_task);
 }
 
 /*
@@ -516,10 +528,6 @@ static int atl1c_mii_ioctl(struct net_device *netdev,
 		break;
 
 	case SIOCGMIIREG:
-		if (!capable(CAP_NET_ADMIN)) {
-			retval = -EPERM;
-			goto out;
-		}
 		if (atl1c_read_phy_reg(&adapter->hw, data->reg_num & 0x1F,
 				    &data->val_out)) {
 			retval = -EIO;
@@ -528,10 +536,6 @@ static int atl1c_mii_ioctl(struct net_device *netdev,
 		break;
 
 	case SIOCSMIIREG:
-		if (!capable(CAP_NET_ADMIN)) {
-			retval = -EPERM;
-			goto out;
-		}
 		if (data->reg_num & ~(0x1F)) {
 			retval = -EFAULT;
 			goto out;
@@ -1106,7 +1110,6 @@ static void atl1c_configure_dma(struct atl1c_adapter *adapter)
 static int atl1c_stop_mac(struct atl1c_hw *hw)
 {
 	u32 data;
-	int timeout;
 
 	AT_READ_REG(hw, REG_RXQ_CTRL, &data);
 	data &= ~(RXQ1_CTRL_EN | RXQ2_CTRL_EN |
@@ -1117,25 +1120,13 @@ static int atl1c_stop_mac(struct atl1c_hw *hw)
 	data &= ~TXQ_CTRL_EN;
 	AT_WRITE_REG(hw, REG_TWSI_CTRL, data);
 
-	for (timeout = 0; timeout < AT_HW_MAX_IDLE_DELAY; timeout++) {
-		AT_READ_REG(hw, REG_IDLE_STATUS, &data);
-		if ((data & (IDLE_STATUS_RXQ_NO_IDLE |
-			IDLE_STATUS_TXQ_NO_IDLE)) == 0)
-			break;
-		msleep(1);
-	}
+	atl1c_wait_until_idle(hw);
 
 	AT_READ_REG(hw, REG_MAC_CTRL, &data);
 	data &= ~(MAC_CTRL_TX_EN | MAC_CTRL_RX_EN);
 	AT_WRITE_REG(hw, REG_MAC_CTRL, data);
 
-	for (timeout = 0; timeout < AT_HW_MAX_IDLE_DELAY; timeout++) {
-		AT_READ_REG(hw, REG_IDLE_STATUS, &data);
-		if ((data & IDLE_STATUS_MASK) == 0)
-			return 0;
-		msleep(1);
-	}
-	return data;
+	return (int)atl1c_wait_until_idle(hw);
 }
 
 static void atl1c_enable_rx_ctrl(struct atl1c_hw *hw)
@@ -1178,8 +1169,6 @@ static int atl1c_reset_mac(struct atl1c_hw *hw)
 {
 	struct atl1c_adapter *adapter = (struct atl1c_adapter *)hw->adapter;
 	struct pci_dev *pdev = adapter->pdev;
-	u32 idle_status_data = 0;
-	int timeout = 0;
 	int ret;
 
 	AT_WRITE_REG(hw, REG_IMR, 0);
@@ -1198,15 +1187,10 @@ static int atl1c_reset_mac(struct atl1c_hw *hw)
 	AT_WRITE_FLUSH(hw);
 	msleep(10);
 	/* Wait at least 10ms for All module to be Idle */
-	for (timeout = 0; timeout < AT_HW_MAX_IDLE_DELAY; timeout++) {
-		AT_READ_REG(hw, REG_IDLE_STATUS, &idle_status_data);
-		if ((idle_status_data & IDLE_STATUS_MASK) == 0)
-			break;
-		msleep(1);
-	}
-	if (timeout >= AT_HW_MAX_IDLE_DELAY) {
+
+	if (atl1c_wait_until_idle(hw)) {
 		dev_err(&pdev->dev,
-			"MAC state machine cann't be idle since"
+			"MAC state machine can't be idle since"
 			" disabled for 10ms second\n");
 		return -1;
 	}
@@ -1242,9 +1226,7 @@ static void atl1c_set_aspm(struct atl1c_hw *hw, bool linkup)
 
 	AT_READ_REG(hw, REG_PM_CTRL, &pm_ctrl_data);
 
-	pm_ctrl_data &= PM_CTRL_SERDES_PD_EX_L1;
-	pm_ctrl_data |= ~PM_CTRL_SERDES_BUDS_RX_L1_EN;
-	pm_ctrl_data |= ~PM_CTRL_SERDES_L1_EN;
+	pm_ctrl_data &= ~PM_CTRL_SERDES_PD_EX_L1;
 	pm_ctrl_data &=  ~(PM_CTRL_L1_ENTRY_TIMER_MASK <<
 			PM_CTRL_L1_ENTRY_TIMER_SHIFT);
 
@@ -1254,19 +1236,11 @@ static void atl1c_set_aspm(struct atl1c_hw *hw, bool linkup)
 		pm_ctrl_data |= PM_CTRL_SERDES_PLL_L1_EN;
 		pm_ctrl_data &= ~PM_CTRL_CLK_SWH_L1;
 
-		if (hw->ctrl_flags & ATL1C_ASPM_L1_SUPPORT) {
-			pm_ctrl_data |= AT_ASPM_L1_TIMER <<
-				PM_CTRL_L1_ENTRY_TIMER_SHIFT;
-			pm_ctrl_data |= PM_CTRL_ASPM_L1_EN;
-		} else
-			pm_ctrl_data &= ~PM_CTRL_ASPM_L1_EN;
-
-		if (hw->ctrl_flags & ATL1C_ASPM_L0S_SUPPORT)
-			pm_ctrl_data |= PM_CTRL_ASPM_L0S_EN;
-		else
-			pm_ctrl_data &= ~PM_CTRL_ASPM_L0S_EN;
-
+		pm_ctrl_data |= PM_CTRL_SERDES_BUDS_RX_L1_EN;
+		pm_ctrl_data |= PM_CTRL_SERDES_L1_EN;
 	} else {
+		pm_ctrl_data &= ~PM_CTRL_SERDES_BUDS_RX_L1_EN;
+		pm_ctrl_data &= ~PM_CTRL_SERDES_L1_EN;
 		pm_ctrl_data &= ~PM_CTRL_ASPM_L0S_EN;
 		pm_ctrl_data &= ~PM_CTRL_SERDES_PLL_L1_EN;
 
@@ -1556,7 +1530,8 @@ static irqreturn_t atl1c_intr(int irq, void *data)
 			/* reset MAC */
 			hw->intr_mask &= ~ISR_ERROR;
 			AT_WRITE_REG(hw, REG_IMR, hw->intr_mask);
-			schedule_work(&adapter->reset_task);
+			adapter->work_event |= ATL1C_WORK_EVENT_RESET;
+			schedule_work(&adapter->common_task);
 			break;
 		}
 
@@ -1701,7 +1676,7 @@ static void atl1c_clean_rx_irq(struct atl1c_adapter *adapter, u8 que,
 		if (likely(RRS_RXD_IS_VALID(rrs->word3))) {
 			rfd_num = (rrs->word0 >> RRS_RX_RFD_CNT_SHIFT) &
 				RRS_RX_RFD_CNT_MASK;
-			if (unlikely(rfd_num) != 1)
+			if (unlikely(rfd_num != 1))
 				/* TODO support mul rfd*/
 				if (netif_msg_rx_err(adapter))
 					dev_warn(&pdev->dev,
@@ -1752,7 +1727,6 @@ rrs_checked:
 		} else
 			netif_receive_skb(skb);
 
-		netdev->last_rx = jiffies;
 		(*work_done)++;
 		count++;
 	}
@@ -2067,7 +2041,8 @@ static void atl1c_tx_queue(struct atl1c_adapter *adapter, struct sk_buff *skb,
 	AT_WRITE_REG(&adapter->hw, REG_MB_PRIO_PROD_IDX, prod_data);
 }
 
-static int atl1c_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
+static netdev_tx_t atl1c_xmit_frame(struct sk_buff *skb,
+					  struct net_device *netdev)
 {
 	struct atl1c_adapter *adapter = netdev_priv(netdev);
 	unsigned long flags;
@@ -2123,7 +2098,6 @@ static int atl1c_xmit_frame(struct sk_buff *skb, struct net_device *netdev)
 	atl1c_tx_map(adapter, skb, tpd, type);
 	atl1c_tx_queue(adapter, skb, tpd, type);
 
-	netdev->trans_start = jiffies;
 	spin_unlock_irqrestore(&adapter->tx_lock, flags);
 	return NETDEV_TX_OK;
 }
@@ -2221,8 +2195,7 @@ void atl1c_down(struct atl1c_adapter *adapter)
 	struct net_device *netdev = adapter->netdev;
 
 	atl1c_del_timer(adapter);
-	atl1c_cancel_work(adapter);
-
+	adapter->work_event = 0; /* clear all event */
 	/* signal that we're down so the interrupt handler does not
 	 * reschedule our watchdog timer */
 	set_bit(__AT_DOWN, &adapter->flags);
@@ -2317,7 +2290,7 @@ static int atl1c_suspend(struct pci_dev *pdev, pm_message_t state)
 	u32 ctrl;
 	u32 mac_ctrl_data;
 	u32 master_ctrl_data;
-	u32 wol_ctrl_data;
+	u32 wol_ctrl_data = 0;
 	u16 mii_bmsr_data;
 	u16 save_autoneg_advertised;
 	u16 mii_intr_status_data;
@@ -2532,8 +2505,8 @@ static int __devinit atl1c_probe(struct pci_dev *pdev,
 	 * various kernel subsystems to support the mechanics required by a
 	 * fixed-high-32-bit system.
 	 */
-	if ((pci_set_dma_mask(pdev, DMA_32BIT_MASK) != 0) ||
-	    (pci_set_consistent_dma_mask(pdev, DMA_32BIT_MASK) != 0)) {
+	if ((pci_set_dma_mask(pdev, DMA_BIT_MASK(32)) != 0) ||
+	    (pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32)) != 0)) {
 		dev_err(&pdev->dev, "No usable DMA configuration,aborting\n");
 		goto err_dma;
 	}
@@ -2622,8 +2595,8 @@ static int __devinit atl1c_probe(struct pci_dev *pdev,
 			adapter->hw.mac_addr[4], adapter->hw.mac_addr[5]);
 
 	atl1c_hw_set_mac_addr(&adapter->hw);
-	INIT_WORK(&adapter->reset_task, atl1c_reset_task);
-	INIT_WORK(&adapter->link_chg_task, atl1c_link_chg_task);
+	INIT_WORK(&adapter->common_task, atl1c_common_task);
+	adapter->work_event = 0;
 	err = register_netdev(netdev);
 	if (err) {
 		dev_err(&pdev->dev, "register netdevice failed\n");
@@ -2690,6 +2663,9 @@ static pci_ers_result_t atl1c_io_error_detected(struct pci_dev *pdev,
 	struct atl1c_adapter *adapter = netdev_priv(netdev);
 
 	netif_device_detach(netdev);
+
+	if (state == pci_channel_io_perm_failure)
+		return PCI_ERS_RESULT_DISCONNECT;
 
 	if (netif_running(netdev))
 		atl1c_down(adapter);

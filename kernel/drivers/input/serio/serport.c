@@ -15,12 +15,12 @@
 
 #include <asm/uaccess.h>
 #include <linux/kernel.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/serio.h>
 #include <linux/tty.h>
-#include <linux/freezer.h>
 
 MODULE_AUTHOR("Vojtech Pavlik <vojtech@ucw.cz>");
 MODULE_DESCRIPTION("Input device TTY line discipline");
@@ -169,10 +169,8 @@ static ssize_t serport_ldisc_read(struct tty_struct * tty, struct file * file, u
 	serio_register_port(serport->serio);
 	printk(KERN_INFO "serio: Serial port %s\n", tty_name(tty, name));
 
-	freezer_do_not_count();
-        wait_event(serport->wait, test_bit(SERPORT_DEAD, &serport->flags));
-        freezer_count();
-        serio_unregister_port(serport->serio);
+	wait_event_interruptible(serport->wait, test_bit(SERPORT_DEAD, &serport->flags));
+	serio_unregister_port(serport->serio);
 	serport->serio = NULL;
 
 	clear_bit(SERPORT_DEAD, &serport->flags);

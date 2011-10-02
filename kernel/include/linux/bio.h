@@ -132,7 +132,6 @@ struct bio {
  * top 4 bits of bio flags indicate the pool this bio came from
  */
 #define BIO_POOL_BITS		(4)
-#define BIO_POOL_NONE		((1UL << BIO_POOL_BITS) - 1)
 #define BIO_POOL_OFFSET		(BITS_PER_LONG - BIO_POOL_BITS)
 #define BIO_POOL_MASK		(1UL << BIO_POOL_OFFSET)
 #define BIO_POOL_IDX(bio)	((bio)->bi_flags >> BIO_POOL_OFFSET)	
@@ -142,19 +141,17 @@ struct bio {
  *
  * bit 0 -- data direction
  *	If not set, bio is a read from device. If set, it's a write to device.
- * bit 1 -- fail fast device errors
- * bit 2 -- fail fast transport errors
- * bit 3 -- fail fast driver errors
- * bit 4 -- rw-ahead when set
- * bit 5 -- barrier
+ * bit 1 -- rw-ahead when set
+ * bit 2 -- barrier
  *	Insert a serialization point in the IO queue, forcing previously
  *	submitted IO to be completed before this one is issued.
- * bit 6 -- synchronous I/O hint.
- * bit 7 -- Unplug the device immediately after submitting this bio.
- * bit 8 -- metadata request
+ * bit 3 -- synchronous I/O hint: the block layer will unplug immediately
+ *	Note that this does NOT indicate that the IO itself is sync, just
+ *	that the block layer will not postpone issue of this IO by plugging.
+ * bit 4 -- metadata request
  *	Used for tracing to differentiate metadata and data IO. May also
  *	get some preferential treatment in the IO scheduler
- * bit 9 -- discard sectors
+ * bit 5 -- discard sectors
  *	Informs the lower level device that this range of sectors is no longer
  *	used by the file system and may thus be freed by the device. Used
  *	for flash based storage.

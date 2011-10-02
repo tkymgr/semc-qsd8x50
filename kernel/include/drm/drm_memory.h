@@ -44,6 +44,8 @@
 
 #if __OS_HAS_AGP
 
+#include <linux/vmalloc.h>
+
 #ifdef HAVE_PAGE_AGP
 #include <asm/agp.h>
 #else

@@ -27,7 +27,6 @@ struct v4l2_device;
 struct v4l2_subdev;
 struct tuner_setup;
 
-
 /* Sub-devices are devices that are connected somehow to the main bridge
    device. These devices are usually audio/video muxers/encoders/decoders or
    sensors and webcam controllers.
@@ -69,29 +68,9 @@ struct tuner_setup;
    the use-case it might be better to use subdev-specific ops (currently
    not yet implemented) since ops provide proper type-checking.
  */
-
-/* s_config: if set, then it is always called by the v4l2_i2c_new_subdev*
-	functions after the v4l2_subdev was registered. It is used to pass
-	platform data to the subdev which can be used during initialization.
-
-   init: initialize the sensor registors to some sort of reasonable default
-	values. Do not use for new drivers and should be removed in existing
-	drivers.
-
-   load_fw: load firmware.
-
-   reset: generic reset command. The argument selects which subsystems to
-	reset. Passing 0 will always reset the whole chip. Do not use for new
-	drivers without discussing this first on the linux-media mailinglist.
-	There should be no reason normally to reset a device.
-
-   s_gpio: set GPIO pins. Very simple right now, might need to be extended with
-	a direction argument if needed.
- */
 struct v4l2_subdev_core_ops {
 	int (*g_chip_ident)(struct v4l2_subdev *sd, struct v4l2_dbg_chip_ident *chip);
 	int (*log_status)(struct v4l2_subdev *sd);
-	int (*s_config)(struct v4l2_subdev *sd, int irq, void *platform_data);
 	int (*init)(struct v4l2_subdev *sd, u32 val);
 	int (*s_standby)(struct v4l2_subdev *sd, u32 standby);
 	int (*reset)(struct v4l2_subdev *sd, u32 val);
@@ -99,11 +78,7 @@ struct v4l2_subdev_core_ops {
 	int (*queryctrl)(struct v4l2_subdev *sd, struct v4l2_queryctrl *qc);
 	int (*g_ctrl)(struct v4l2_subdev *sd, struct v4l2_control *ctrl);
 	int (*s_ctrl)(struct v4l2_subdev *sd, struct v4l2_control *ctrl);
-	int (*g_ext_ctrls)(struct v4l2_subdev *sd, struct v4l2_ext_controls *ctrls);
-	int (*s_ext_ctrls)(struct v4l2_subdev *sd, struct v4l2_ext_controls *ctrls);
-	int (*try_ext_ctrls)(struct v4l2_subdev *sd, struct v4l2_ext_controls *ctrls);
 	int (*querymenu)(struct v4l2_subdev *sd, struct v4l2_querymenu *qm);
-	int (*s_std)(struct v4l2_subdev *sd, v4l2_std_id norm);
 	long (*ioctl)(struct v4l2_subdev *sd, unsigned int cmd, void *arg);
 #ifdef CONFIG_VIDEO_ADV_DEBUG
 	int (*g_register)(struct v4l2_subdev *sd, struct v4l2_dbg_register *reg);
@@ -111,16 +86,6 @@ struct v4l2_subdev_core_ops {
 #endif
 };
 
-/* s_mode: switch the tuner to a specific tuner mode. Replacement of s_radio.
-
-   s_radio: v4l device was opened in Radio mode, to be replaced by s_mode.
-
-   s_type_addr: sets tuner type and its I2C addr.
-
-   s_config: sets tda9887 specific stuff, like port1, port2 and qss
-
-   s_standby: puts tuner on powersaving state, disabling it, except for i2c.
- */
 struct v4l2_subdev_tuner_ops {
 	int (*s_mode)(struct v4l2_subdev *sd, enum v4l2_tuner_type);
 	int (*s_radio)(struct v4l2_subdev *sd);
@@ -147,13 +112,9 @@ struct v4l2_subdev_video_ops {
 	int (*g_vbi_data)(struct v4l2_subdev *sd, struct v4l2_sliced_vbi_data *vbi_data);
 	int (*g_sliced_vbi_cap)(struct v4l2_subdev *sd, struct v4l2_sliced_vbi_cap *cap);
 	int (*s_std_output)(struct v4l2_subdev *sd, v4l2_std_id std);
-	int (*querystd)(struct v4l2_subdev *sd, v4l2_std_id *std);
-	int (*g_input_status)(struct v4l2_subdev *sd, u32 *status);
 	int (*s_stream)(struct v4l2_subdev *sd, int enable);
-	int (*enum_fmt)(struct v4l2_subdev *sd, struct v4l2_fmtdesc *fmtdesc);
-	int (*g_fmt)(struct v4l2_subdev *sd, struct v4l2_format *fmt);
-	int (*try_fmt)(struct v4l2_subdev *sd, struct v4l2_format *fmt);
 	int (*s_fmt)(struct v4l2_subdev *sd, struct v4l2_format *fmt);
+	int (*g_fmt)(struct v4l2_subdev *sd, struct v4l2_format *fmt);
 };
 
 struct v4l2_subdev_ops {
@@ -164,9 +125,6 @@ struct v4l2_subdev_ops {
 };
 
 #define V4L2_SUBDEV_NAME_SIZE 32
-
-/* Set this flag if this subdev is a i2c device. */
-#define V4L2_SUBDEV_FL_IS_I2C (1U << 0)
 
 /* Each instance of a subdev driver should create this struct, either
    stand-alone or embedded in a larger struct.
@@ -227,10 +185,5 @@ static inline void v4l2_subdev_init(struct v4l2_subdev *sd,
 #define v4l2_subdev_call(sd, o, f, args...)				\
 	(!(sd) ? -ENODEV : (((sd) && (sd)->ops->o && (sd)->ops->o->f) ?	\
 		(sd)->ops->o->f((sd) , ##args) : -ENOIOCTLCMD))
-
-/* Send a notification to v4l2_device. */
-#define v4l2_subdev_notify(sd, notification, arg)			   \
-	((!(sd) || !(sd)->v4l2_dev || !(sd)->v4l2_dev->notify) ? -ENODEV : \
-	 (sd)->v4l2_dev->notify((sd), (notification), (arg)))
 
 #endif

@@ -45,7 +45,6 @@
 #include <linux/vmalloc.h>
 #include <linux/pagemap.h>
 #include <linux/tcp.h>
-#include <linux/mii.h>
 #include <linux/ethtool.h>
 #include <linux/if_vlan.h>
 #include <linux/workqueue.h>
@@ -189,14 +188,14 @@ struct atl1c_tpd_ext_desc {
 #define RRS_HDS_TYPE_DATA	2
 
 #define RRS_IS_NO_HDS_TYPE(flag) \
-	(((flag) >> (RRS_HDS_TYPE_SHIFT)) & RRS_HDS_TYPE_MASK == 0)
+	((((flag) >> (RRS_HDS_TYPE_SHIFT)) & RRS_HDS_TYPE_MASK) == 0)
 
 #define RRS_IS_HDS_HEAD(flag) \
-	(((flag) >> (RRS_HDS_TYPE_SHIFT)) & RRS_HDS_TYPE_MASK == \
+	((((flag) >> (RRS_HDS_TYPE_SHIFT)) & RRS_HDS_TYPE_MASK) == \
 			RRS_HDS_TYPE_HEAD)
 
 #define RRS_IS_HDS_DATA(flag) \
-	(((flag) >> (RRS_HDS_TYPE_SHIFT)) & RRS_HDS_TYPE_MASK == \
+	((((flag) >> (RRS_HDS_TYPE_SHIFT)) & RRS_HDS_TYPE_MASK) == \
 			RRS_HDS_TYPE_DATA)
 
 /* rrs word 3 bit 0:31 */
@@ -246,7 +245,7 @@ struct atl1c_tpd_ext_desc {
 #define RRS_PACKET_TYPE_802_3  	1
 #define RRS_PACKET_TYPE_ETH	0
 #define RRS_PACKET_IS_ETH(word) \
-	(((word) >> RRS_PACKET_TYPE_SHIFT) & RRS_PACKET_TYPE_MASK == \
+	((((word) >> RRS_PACKET_TYPE_SHIFT) & RRS_PACKET_TYPE_MASK) == \
 			RRS_PACKET_TYPE_ETH)
 #define RRS_RXD_IS_VALID(word) \
 	((((word) >> RRS_RXD_UPDATED_SHIFT) & RRS_RXD_UPDATED_MASK) == 1)
@@ -535,6 +534,9 @@ struct atl1c_adapter {
 #define __AT_TESTING        0x0001
 #define __AT_RESETTING      0x0002
 #define __AT_DOWN           0x0003
+	u8 work_event;
+#define ATL1C_WORK_EVENT_RESET 		0x01
+#define ATL1C_WORK_EVENT_LINK_CHANGE	0x02
 	u32 msg_enable;
 
 	bool have_msi;
@@ -546,8 +548,7 @@ struct atl1c_adapter {
 	spinlock_t tx_lock;
 	atomic_t irq_sem;
 
-	struct work_struct reset_task;
-	struct work_struct link_chg_task;
+	struct work_struct common_task;
 	struct timer_list watchdog_timer;
 	struct timer_list phy_config_timer;
 

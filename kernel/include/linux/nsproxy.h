@@ -8,7 +8,6 @@ struct mnt_namespace;
 struct uts_namespace;
 struct ipc_namespace;
 struct pid_namespace;
-struct fs_struct;
 
 /*
  * A structure to contain pointers to all per-process

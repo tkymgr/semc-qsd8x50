@@ -1,5 +1,5 @@
 #
-# Makefile for the Linux Wireless network device drivers.
+# Makefile for the Linux Wireless network device drivers.ath
 #
 
 obj-$(CONFIG_IPW2100) += ipw2x00/
@@ -50,9 +50,6 @@ obj-$(CONFIG_IWLWIFI)	+= iwlwifi/
 obj-$(CONFIG_RT2X00)	+= rt2x00/
 
 obj-$(CONFIG_P54_COMMON)	+= p54/
-
-obj-$(CONFIG_ATH5K)	+= ath5k/
-obj-$(CONFIG_ATH9K)	+= ath9k/
 
 obj-$(CONFIG_MAC80211_HWSIM)	+= mac80211_hwsim.o
 obj-$(CONFIG_LIBRA_SDIOIF)	+= libra/

@@ -16,11 +16,11 @@
  *
  */
 
-#include <mach/debug_adsp_mm.h>
 #include <linux/io.h>
 
 #include <mach/qdsp5/qdsp5venccmdi.h>
 #include "adsp.h"
+#include <mach/debug_mm.h>
 
 
 static unsigned short x_dimension, y_dimension;
@@ -113,6 +113,10 @@ static int verify_venc_cmd(struct msm_adsp_module *module,
 		break;
 	case VIDENC_CMD_DIS_CFG:
 		if (cmd_size < sizeof(videnc_cmd_dis_cfg))
+			return -1;
+		break;
+	case VIDENC_CMD_VENC_CLOCK:
+		if (cmd_size < sizeof(struct videnc_cmd_venc_clock))
 			return -1;
 		break;
 	case VIDENC_CMD_CFG:

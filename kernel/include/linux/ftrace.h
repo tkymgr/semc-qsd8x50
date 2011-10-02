@@ -271,13 +271,6 @@ static inline void __ftrace_enabled_restore(int enabled)
 #ifdef CONFIG_TRACING
 extern int ftrace_dump_on_oops;
 
-extern void tracing_start(void);
-extern void tracing_stop(void);
-extern void ftrace_off_permanent(void);
-
-extern void
-ftrace_special(unsigned long arg1, unsigned long arg2, unsigned long arg3);
-
 /**
  * ftrace_printk - printf formatting in the ftrace buffer
  * @fmt: the printf format for printing
@@ -298,22 +291,15 @@ ftrace_special(unsigned long arg1, unsigned long arg2, unsigned long arg3);
 extern int
 __ftrace_printk(unsigned long ip, const char *fmt, ...)
 	__attribute__ ((format (printf, 2, 3)));
-extern void ftrace_dump(void);
 #else
-static inline void
-ftrace_special(unsigned long arg1, unsigned long arg2, unsigned long arg3) { }
 static inline int
 ftrace_printk(const char *fmt, ...) __attribute__ ((format (printf, 1, 2)));
 
-static inline void tracing_start(void) { }
-static inline void tracing_stop(void) { }
-static inline void ftrace_off_permanent(void) { }
 static inline int
 ftrace_printk(const char *fmt, ...)
 {
 	return 0;
 }
-static inline void ftrace_dump(void) { }
 #endif
 
 #ifdef CONFIG_FTRACE_MCOUNT_RECORD

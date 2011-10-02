@@ -272,11 +272,16 @@ struct audpp_cmd_cfg_adec_params_wav {
 #define AUDPP_CMD_CFG_DEV_MIXER_ID_4       4
 
 #define AUDPP_CMD_CFG_DEV_MIXER_DEV_NONE   0x0000
-#define AUDPP_CMD_CFG_DEV_MIXER_DEV_0      0x0001
-#define AUDPP_CMD_CFG_DEV_MIXER_DEV_1      0x0002
-#define AUDPP_CMD_CFG_DEV_MIXER_DEV_2      0x0004
-#define AUDPP_CMD_CFG_DEV_MIXER_DEV_3      0x0008
-#define AUDPP_CMD_CFG_DEV_MIXER_DEV_4      0x0010
+#define AUDPP_CMD_CFG_DEV_MIXER_DEV_0      \
+				(0x1 << AUDPP_CMD_CFG_DEV_MIXER_ID_0)
+#define AUDPP_CMD_CFG_DEV_MIXER_DEV_1      \
+				(0x1 << AUDPP_CMD_CFG_DEV_MIXER_ID_1)
+#define AUDPP_CMD_CFG_DEV_MIXER_DEV_2      \
+				(0x1 << AUDPP_CMD_CFG_DEV_MIXER_ID_2)
+#define AUDPP_CMD_CFG_DEV_MIXER_DEV_3      \
+				(0x1 << AUDPP_CMD_CFG_DEV_MIXER_ID_3)
+#define AUDPP_CMD_CFG_DEV_MIXER_DEV_4      \
+				(0x1 << AUDPP_CMD_CFG_DEV_MIXER_ID_4)
 
 struct audpp_cmd_cfg_dev_mixer_params {
 	unsigned short cmd_id;
@@ -788,6 +793,8 @@ struct audpp_cmd_cfg_object_params_eqalizer {
 
 #define AUDPP_CMD_ADRC_FLAG_DIS		0x0000
 #define AUDPP_CMD_ADRC_FLAG_ENA		-1
+#define AUDPP_CMD_PBE_FLAG_DIS		0x0000
+#define AUDPP_CMD_PBE_FLAG_ENA		-1
 
 struct audpp_cmd_cfg_object_params_adrc {
 	struct audpp_cmd_cfg_object_params_common 	common;
@@ -1010,6 +1017,43 @@ struct audpp_cmd_reverb_config_env_15 {
 	struct audpp_cmd_reverb_config_common	common;
 	unsigned short			object_num;
 	unsigned short			absolute_gain;
+} __attribute__((packed));
+
+#define AUDPP_CMD_CFG_PBE_LEN sizeof(struct audpp_cmd_cfg_pbe)
+
+struct audpp_cmd_cfg_pbe {
+	struct audpp_cmd_cfg_object_params_common       common;
+	unsigned short pbe_enable;
+	signed short   realbassmix;
+	signed short   basscolorcontrol;
+	unsigned short mainchaindelay;
+	unsigned short xoverfltorder;
+	unsigned short bandpassfltorder;
+	signed short   adrcdelay;
+	unsigned short downsamplelevel;
+	unsigned short comprmstav;
+	signed short   expthreshold;
+	unsigned short expslope;
+	unsigned short compthreshold;
+	unsigned short compslope;
+	unsigned short cpmpattack_lsw;
+	unsigned short compattack_msw;
+	unsigned short comprelease_lsw;
+	unsigned short comprelease_msw;
+	unsigned short compmakeupgain;
+	signed short   baselimthreshold;
+	signed short   highlimthreshold;
+	signed short   basslimmakeupgain;
+	signed short   highlimmakeupgain;
+	signed short   limbassgrc;
+	signed short   limhighgrc;
+	signed short   limdelay;
+	unsigned short filter_coeffs[90];
+	unsigned short extbuffsize_lsw;
+	unsigned short extbuffsize_msw;
+	unsigned short extpartition;
+	unsigned short extbuffstart_lsw;
+	unsigned short extbuffstart_msw;
 } __attribute__((packed));
 
 #endif /* __MACH_QDSP5_V2_QDSP5AUDPPCMDI_H */

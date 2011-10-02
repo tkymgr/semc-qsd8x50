@@ -71,67 +71,52 @@ deps_config := \
 	fs/ext3/Kconfig \
 	fs/ext2/Kconfig \
 	fs/Kconfig \
-	drivers/staging/iio/trigger/Kconfig \
-	drivers/staging/iio/light/Kconfig \
-	drivers/staging/iio/adc/Kconfig \
-	drivers/staging/iio/accel/Kconfig \
-	drivers/staging/iio/Kconfig \
-	drivers/staging/sep/Kconfig \
-	drivers/staging/rar/Kconfig \
-	drivers/staging/vme/devices/Kconfig \
-	drivers/staging/vme/bridges/Kconfig \
-	drivers/staging/vme/Kconfig \
-	drivers/staging/hv/Kconfig \
-	drivers/staging/udlfb/Kconfig \
-	drivers/staging/vt6656/Kconfig \
-	drivers/staging/vt6655/Kconfig \
-	drivers/staging/quatech_usb2/Kconfig \
-	drivers/staging/serqt_usb2/Kconfig \
-	drivers/staging/octeon/Kconfig \
-	drivers/gpu/drm/radeon/Kconfig \
-	drivers/staging/line6/Kconfig \
-	drivers/staging/p9auth/Kconfig \
-	drivers/staging/phison/Kconfig \
-	drivers/staging/b3dfg/Kconfig \
-	drivers/staging/pohmelfs/Kconfig \
-	drivers/staging/dst/Kconfig \
-	drivers/staging/dream/camera/Kconfig \
-	drivers/staging/dream/smd/Kconfig \
-	drivers/staging/dream/Kconfig \
+	drivers/platform/x86/Kconfig \
+	drivers/platform/Kconfig \
 	drivers/staging/android/Kconfig \
+	drivers/staging/epl/Kconfig \
 	drivers/staging/frontier/Kconfig \
 	drivers/staging/mimio/Kconfig \
-	drivers/staging/rtl8192e/Kconfig \
-	drivers/staging/rtl8192su/Kconfig \
 	drivers/staging/rtl8187se/Kconfig \
 	drivers/staging/altpciechdma/Kconfig \
 	drivers/staging/panel/Kconfig \
 	drivers/staging/asus_oled/Kconfig \
 	drivers/staging/comedi/Kconfig \
-	drivers/staging/rt3090/Kconfig \
 	drivers/staging/rt2870/Kconfig \
 	drivers/staging/rt2860/Kconfig \
 	drivers/staging/otus/Kconfig \
+	drivers/staging/agnx/Kconfig \
 	drivers/staging/poch/Kconfig \
+	drivers/staging/at76_usb/Kconfig \
 	drivers/staging/echo/Kconfig \
 	drivers/staging/wlan-ng/Kconfig \
 	drivers/staging/winbond/Kconfig \
 	drivers/staging/usbip/Kconfig \
-	drivers/staging/cx25821/Kconfig \
 	drivers/staging/go7007/Kconfig \
 	drivers/staging/slicoss/Kconfig \
 	drivers/staging/et131x/Kconfig \
 	drivers/staging/Kconfig \
+	drivers/xen/Kconfig \
 	drivers/uio/Kconfig \
-	drivers/regulator/Kconfig \
 	drivers/auxdisplay/Kconfig \
 	drivers/dca/Kconfig \
 	drivers/dma/Kconfig \
 	drivers/rtc/Kconfig \
-	drivers/switch/Kconfig \
-	drivers/haptic/Kconfig \
-	drivers/leds/Kconfig \
+	drivers/edac/Kconfig \
+	drivers/infiniband/ulp/iser/Kconfig \
+	drivers/infiniband/ulp/srp/Kconfig \
+	drivers/infiniband/ulp/ipoib/Kconfig \
+	drivers/infiniband/hw/nes/Kconfig \
+	drivers/infiniband/hw/mlx4/Kconfig \
+	drivers/infiniband/hw/cxgb3/Kconfig \
+	drivers/infiniband/hw/amso1100/Kconfig \
+	drivers/infiniband/hw/ehca/Kconfig \
+	drivers/infiniband/hw/ipath/Kconfig \
+	drivers/infiniband/hw/mthca/Kconfig \
+	drivers/infiniband/Kconfig \
 	drivers/accessibility/Kconfig \
+	drivers/switch/Kconfig \
+	drivers/leds/Kconfig \
 	drivers/memstick/host/Kconfig \
 	drivers/memstick/core/Kconfig \
 	drivers/memstick/Kconfig \
@@ -181,7 +166,6 @@ deps_config := \
 	sound/sh/Kconfig \
 	sound/mips/Kconfig \
 	sound/spi/Kconfig \
-	sound/atmel/Kconfig \
 	sound/arm/Kconfig \
 	sound/aoa/soundbus/Kconfig \
 	sound/aoa/codecs/Kconfig \
@@ -205,6 +189,7 @@ deps_config := \
 	drivers/char/agp/Kconfig \
 	drivers/video/Kconfig \
 	drivers/media/dvb/frontends/Kconfig \
+	drivers/media/dvb/pt1/Kconfig \
 	drivers/media/dvb/firewire/Kconfig \
 	drivers/media/dvb/dm1105/Kconfig \
 	drivers/media/dvb/pluto2/Kconfig \
@@ -225,6 +210,7 @@ deps_config := \
 	drivers/media/video/usbvision/Kconfig \
 	drivers/media/video/em28xx/Kconfig \
 	drivers/media/video/pvrusb2/Kconfig \
+	drivers/media/video/gspca/gl860/Kconfig \
 	drivers/media/video/gspca/stv06xx/Kconfig \
 	drivers/media/video/gspca/m5602/Kconfig \
 	drivers/media/video/gspca/Kconfig \
@@ -244,6 +230,7 @@ deps_config := \
 	drivers/media/common/tuners/Kconfig \
 	drivers/media/common/Kconfig \
 	drivers/media/Kconfig \
+	drivers/regulator/Kconfig \
 	drivers/mfd/Kconfig \
 	drivers/ssb/Kconfig \
 	drivers/watchdog/Kconfig \
@@ -277,11 +264,12 @@ deps_config := \
 	drivers/input/mouse/Kconfig \
 	drivers/input/keyboard/Kconfig \
 	drivers/input/Kconfig \
+	drivers/telephony/Kconfig \
+	drivers/isdn/gigaset/Kconfig \
 	drivers/isdn/hardware/eicon/Kconfig \
 	drivers/isdn/hardware/avm/Kconfig \
 	drivers/isdn/hardware/Kconfig \
 	drivers/isdn/capi/Kconfig \
-	drivers/isdn/gigaset/Kconfig \
 	drivers/isdn/hysdn/Kconfig \
 	drivers/isdn/act2000/Kconfig \
 	drivers/isdn/sc/Kconfig \
@@ -306,8 +294,6 @@ deps_config := \
 	drivers/net/wireless/hostap/Kconfig \
 	drivers/net/wireless/iwlwifi/Kconfig \
 	drivers/net/wireless/ipw2x00/Kconfig \
-	drivers/net/wireless/ath9k/Kconfig \
-	drivers/net/wireless/ath5k/Kconfig \
 	drivers/net/wireless/p54/Kconfig \
 	drivers/net/wireless/Kconfig \
 	drivers/net/tokenring/Kconfig \
@@ -321,6 +307,7 @@ deps_config := \
 	drivers/net/phy/Kconfig \
 	drivers/net/arcnet/Kconfig \
 	drivers/net/Kconfig \
+	drivers/macintosh/Kconfig \
 	drivers/message/i2o/Kconfig \
 	drivers/firewire/Kconfig \
 	drivers/ieee1394/Kconfig \
@@ -357,6 +344,7 @@ deps_config := \
 	drivers/pnp/isapnp/Kconfig \
 	drivers/pnp/Kconfig \
 	drivers/parport/Kconfig \
+	drivers/of/Kconfig \
 	drivers/mtd/ubi/Kconfig.debug \
 	drivers/mtd/ubi/Kconfig \
 	drivers/mtd/lpddr/Kconfig \
@@ -368,6 +356,7 @@ deps_config := \
 	drivers/mtd/Kconfig \
 	drivers/connector/Kconfig \
 	drivers/base/Kconfig \
+	drivers/Kconfig \
 	net/9p/Kconfig \
 	net/rfkill/Kconfig \
 	net/wimax/Kconfig \
@@ -386,6 +375,8 @@ deps_config := \
 	net/irda/irnet/Kconfig \
 	net/irda/irlan/Kconfig \
 	net/irda/Kconfig \
+	drivers/net/can/usb/Kconfig \
+	drivers/net/can/sja1000/Kconfig \
 	drivers/net/can/Kconfig \
 	net/can/Kconfig \
 	drivers/net/hamradio/Kconfig \

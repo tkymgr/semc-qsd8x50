@@ -832,8 +832,8 @@ config DONT_RESERVE_FROM_MOVABLE_ZONE
 
 config IWMMXT
 	bool "Enable iWMMXt support"
-	depends on CPU_XSCALE || CPU_XSC3
-	default y if PXA27x || PXA3xx
+	depends on CPU_XSCALE || CPU_XSC3 || CPU_MOHAWK
+	default y if PXA27x || PXA3xx || ARCH_MMP
 	help
 	  Enable support for iWMMXt context switching at run time if
 	  running on a CPU that supports it.
@@ -1128,11 +1128,6 @@ config OABI_COMPAT
 
 config ARCH_HAS_HOLES_MEMORYMODEL
 	bool
-
-config ARCH_FLATMEM_HAS_HOLES
-	bool
-	default y
-	depends on FLATMEM
 
 config HOLES_IN_ZONE
 	bool "Memory map has holes ending within MAX_ORDER_NR_PAGES"
@@ -1453,15 +1448,6 @@ config CPU_FREQ_INTEGRATOR
 
 	  If in doubt, say Y.
 
-config CPU_FREQ_IMX
-	tristate "CPUfreq driver for i.MX CPUs"
-	depends on ARCH_IMX && CPU_FREQ
-	default n
-	help
-	  This enables the CPUfreq driver for i.MX CPUs.
-
-	  If in doubt, say N.
-
 config CPU_FREQ_PXA
 	bool
 	depends on CPU_FREQ && ARCH_PXA && PXA25x
@@ -1627,111 +1613,7 @@ endmenu
 
 source "net/Kconfig"
 
-menu "Device Drivers"
-
-source "drivers/base/Kconfig"
-
-source "drivers/connector/Kconfig"
-
-if ALIGNMENT_TRAP || !CPU_CP15_MMU
-source "drivers/mtd/Kconfig"
-endif
-
-source "drivers/parport/Kconfig"
-
-source "drivers/pnp/Kconfig"
-
-source "drivers/block/Kconfig"
-
-# misc before ide - BLK_DEV_SGIIOC4 depends on SGI_IOC4
-
-source "drivers/misc/Kconfig"
-
-source "drivers/ide/Kconfig"
-
-source "drivers/scsi/Kconfig"
-
-source "drivers/ata/Kconfig"
-
-source "drivers/md/Kconfig"
-
-source "drivers/message/fusion/Kconfig"
-
-source "drivers/ieee1394/Kconfig"
-
-source "drivers/message/i2o/Kconfig"
-
-source "drivers/net/Kconfig"
-
-source "drivers/isdn/Kconfig"
-
-# input before char - char/joystick depends on it. As does USB.
-
-source "drivers/input/Kconfig"
-
-source "drivers/char/Kconfig"
-
-source "drivers/i2c/Kconfig"
-
-source "drivers/spi/Kconfig"
-
-source "drivers/gpio/Kconfig"
-
-source "drivers/w1/Kconfig"
-
-source "drivers/power/Kconfig"
-
-source "drivers/hwmon/Kconfig"
-
-source "drivers/thermal/Kconfig"
-
-source "drivers/watchdog/Kconfig"
-
-source "drivers/ssb/Kconfig"
-
-#source "drivers/l3/Kconfig"
-
-source "drivers/mfd/Kconfig"
-
-source "drivers/media/Kconfig"
-
-source "drivers/video/Kconfig"
-
-source "sound/Kconfig"
-
-source "drivers/hid/Kconfig"
-
-source "drivers/usb/Kconfig"
-
-source "drivers/uwb/Kconfig"
-
-source "drivers/mmc/Kconfig"
-
-source "drivers/memstick/Kconfig"
-
-source "drivers/accessibility/Kconfig"
-
-source "drivers/leds/Kconfig"
-
-source "drivers/haptic/Kconfig"
-
-source "drivers/switch/Kconfig"
-
-source "drivers/rtc/Kconfig"
-
-source "drivers/dma/Kconfig"
-
-source "drivers/dca/Kconfig"
-
-source "drivers/auxdisplay/Kconfig"
-
-source "drivers/regulator/Kconfig"
-
-source "drivers/uio/Kconfig"
-
-source "drivers/staging/Kconfig"
-
-endmenu
+source "drivers/Kconfig"
 
 source "fs/Kconfig"
 

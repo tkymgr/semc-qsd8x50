@@ -2,7 +2,7 @@
  * Register/Interrupt access for userspace aDSP library.
  *
  * Copyright (C) 2008 Google, Inc.
- * Copyright (c) 2008-2009, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2008-2009,2011 Code Aurora Forum. All rights reserved.
  * Author: Iliyan Malchev <ibm@android.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -23,7 +23,6 @@
  * - disallow access to non-associated queues
  */
 
-#include <mach/debug_adsp_mm.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
@@ -38,8 +37,9 @@
 #include <mach/clk.h>
 #include <mach/msm_adsp.h>
 #include "adsp.h"
+#include <mach/debug_mm.h>
 
-#define INT_ADSP INT_ADSP_A11
+#define INT_ADSP INT_ADSP_A9_A11
 
 static struct adsp_info adsp_info;
 static struct msm_adsp_module *adsp_modules;
@@ -91,11 +91,11 @@ static int32_t adsp_validate_queue(uint32_t mod_id, unsigned q_idx,
 			if (q_idx == sptr->mod_to_q_tbl[i].q_type) {
 				if (size <= sptr->mod_to_q_tbl[i].q_max_len)
 					return 0;
-				MM_INFO("q_idx: %d is not a valid queue \
+				MM_ERR("q_idx: %d is not a valid queue \
 					for module %x\n", q_idx, mod_id);
 				return -EINVAL;
 			}
-	MM_INFO("cmd_buf size is more than allowed size\n");
+	MM_ERR("cmd_buf size is more than allowed size\n");
 	return -EINVAL;
 }
 
@@ -196,7 +196,7 @@ int msm_adsp_get(const char *name, struct msm_adsp_module **out,
 		return -ENODEV;
 
 	mutex_lock(&module->lock);
-	MM_INFO("opening module %s\n", module->name);
+	MM_DBG("opening module %s\n", module->name);
 
 	if (module->ops) {
 		rc = -EBUSY;
@@ -256,7 +256,7 @@ void msm_adsp_put(struct msm_adsp_module *module)
 }
 EXPORT_SYMBOL(msm_adsp_put);
 
-int msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
+int __msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 		   void *cmd_buf, size_t cmd_size)
 {
 	uint32_t ctrl_word;
@@ -282,13 +282,13 @@ int msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 	}
 	if (adsp_validate_module(module->id)) {
 		spin_unlock_irqrestore(&adsp_write_lock, flags);
-		MM_INFO("module id validation failed %s  %d\n",
+		MM_ERR("module id validation failed %s  %d\n",
 				module->name, module->id);
 		return -ENXIO;
 	}
 	if (dsp_queue_addr >= QDSP_MAX_NUM_QUEUES) {
 		spin_unlock_irqrestore(&adsp_write_lock, flags);
-		MM_INFO("Invalid Queue Index: %d\n", dsp_queue_addr);
+		MM_ERR("Invalid Queue Index: %d\n", dsp_queue_addr);
 		return -ENXIO;
 	}
 	if (adsp_validate_queue(module->id, dsp_queue_addr, cmd_size)) {
@@ -357,8 +357,7 @@ int msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
 
 	if ((ctrl_word & ADSP_RTOS_WRITE_CTRL_WORD_STATUS_M) !=
 	    ADSP_RTOS_WRITE_CTRL_WORD_NO_ERR_V) {
-		ret_status = -EIO;
-		MM_ERR("failed to write queue %x, retry\n", dsp_q_addr);
+		ret_status = -EAGAIN;
 		goto fail;
 	} else {
 		/* No error */
@@ -420,6 +419,22 @@ fail:
 	return ret_status;
 }
 EXPORT_SYMBOL(msm_adsp_write);
+
+int msm_adsp_write(struct msm_adsp_module *module, unsigned dsp_queue_addr,
+			void *cmd_buf, size_t cmd_size)
+{
+	int rc, retries = 0;
+	do {
+		rc = __msm_adsp_write(module, dsp_queue_addr, cmd_buf,
+								cmd_size);
+		if (rc == -EAGAIN)
+			udelay(50);
+	} while (rc == -EAGAIN && retries++ < 300);
+	if (retries > 20)
+		MM_INFO("%s command took %d attempts: rc %d\n",
+			module->name, retries, rc);
+	return rc;
+}
 
 #ifdef CONFIG_MSM_ADSP_REPORT_EVENTS
 static void *event_addr;
@@ -916,7 +931,7 @@ static int msm_adsp_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	adsp_info.raw_event = kzalloc(
-		(sizeof(struct adsp_rtos_mp_mtoa_init_info_type)), GFP_KERNEL);
+		(sizeof(struct adsp_rtos_mp_mtoa_s_type)), GFP_KERNEL);
 	if (!adsp_info.raw_event) {
 		kfree(adsp_info.init_info_ptr);
 		return -ENOMEM;
@@ -948,8 +963,7 @@ static int msm_adsp_probe(struct platform_device *pdev)
 	spin_lock_init(&adsp_write_lock);
 
 	rc = request_irq(INT_ADSP, adsp_irq_handler,
-			IRQF_TRIGGER_RISING | IRQF_SHARED,
-			 "adsp", adsp_irq_handler);
+			IRQF_TRIGGER_RISING, "adsp", 0);
 	if (rc < 0)
 		goto fail_request_irq;
 	disable_irq(INT_ADSP);
@@ -1000,7 +1014,7 @@ static int msm_adsp_probe(struct platform_device *pdev)
 		adsp_info.init_info_state == ADSP_STATE_INIT_INFO,
 		10 * HZ);
 	if (!rc) {
-		MM_INFO("INIT_INFO failed\n");
+		MM_ERR("INIT_INFO failed\n");
 		rc = -ETIMEDOUT;
 	} else
 		return 0;

@@ -30,7 +30,7 @@
 /* Please note that modifications to all structs defined here are
  * subject to backwards-compatibility constraints.
  */
-#include <linux/types.h>
+
 #include "drm.h"
 
 /* Each region is a minimum of 16k, and there are at most 255 of them.
@@ -116,15 +116,15 @@ typedef struct _drm_i915_sarea {
 
 	/* fill out some space for old userspace triple buffer */
 	drm_handle_t unused_handle;
-	__u32 unused1, unused2, unused3;
+	uint32_t unused1, unused2, unused3;
 
 	/* buffer object handles for static buffers. May change
 	 * over the lifetime of the client.
 	 */
-	__u32 front_bo_handle;
-	__u32 back_bo_handle;
-	__u32 unused_bo_handle;
-	__u32 depth_bo_handle;
+	uint32_t front_bo_handle;
+	uint32_t back_bo_handle;
+	uint32_t unused_bo_handle;
+	uint32_t depth_bo_handle;
 
 } drm_i915_sarea_t;
 
@@ -184,8 +184,6 @@ typedef struct _drm_i915_sarea {
 #define DRM_I915_GEM_GET_TILING	0x22
 #define DRM_I915_GEM_GET_APERTURE 0x23
 #define DRM_I915_GEM_MMAP_GTT	0x24
-#define DRM_I915_GET_PIPE_FROM_CRTC_ID	0x25
-#define DRM_I915_GEM_MADVISE	0x26
 
 #define DRM_IOCTL_I915_INIT		DRM_IOW( DRM_COMMAND_BASE + DRM_I915_INIT, drm_i915_init_t)
 #define DRM_IOCTL_I915_FLUSH		DRM_IO ( DRM_COMMAND_BASE + DRM_I915_FLUSH)
@@ -221,8 +219,6 @@ typedef struct _drm_i915_sarea {
 #define DRM_IOCTL_I915_GEM_SET_TILING	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_SET_TILING, struct drm_i915_gem_set_tiling)
 #define DRM_IOCTL_I915_GEM_GET_TILING	DRM_IOWR (DRM_COMMAND_BASE + DRM_I915_GEM_GET_TILING, struct drm_i915_gem_get_tiling)
 #define DRM_IOCTL_I915_GEM_GET_APERTURE	DRM_IOR  (DRM_COMMAND_BASE + DRM_I915_GEM_GET_APERTURE, struct drm_i915_gem_get_aperture)
-#define DRM_IOCTL_I915_GET_PIPE_FROM_CRTC_ID DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GET_PIPE_FROM_CRTC_ID, struct drm_intel_get_pipe_from_crtc_id)
-#define DRM_IOCTL_I915_GEM_MADVISE	DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GEM_MADVISE, struct drm_i915_gem_madvise)
 
 /* Allow drivers to submit batchbuffers directly to hardware, relying
  * on the security mechanisms provided by hardware.
@@ -331,7 +327,7 @@ typedef struct drm_i915_vblank_swap {
 } drm_i915_vblank_swap_t;
 
 typedef struct drm_i915_hws_addr {
-	__u64 addr;
+	uint64_t addr;
 } drm_i915_hws_addr_t;
 
 struct drm_i915_gem_init {
@@ -339,12 +335,12 @@ struct drm_i915_gem_init {
 	 * Beginning offset in the GTT to be managed by the DRM memory
 	 * manager.
 	 */
-	__u64 gtt_start;
+	uint64_t gtt_start;
 	/**
 	 * Ending offset in the GTT to be managed by the DRM memory
 	 * manager.
 	 */
-	__u64 gtt_end;
+	uint64_t gtt_end;
 };
 
 struct drm_i915_gem_create {
@@ -353,94 +349,94 @@ struct drm_i915_gem_create {
 	 *
 	 * The (page-aligned) allocated size for the object will be returned.
 	 */
-	__u64 size;
+	uint64_t size;
 	/**
 	 * Returned handle for the object.
 	 *
 	 * Object handles are nonzero.
 	 */
-	__u32 handle;
-	__u32 pad;
+	uint32_t handle;
+	uint32_t pad;
 };
 
 struct drm_i915_gem_pread {
 	/** Handle for the object being read. */
-	__u32 handle;
-	__u32 pad;
+	uint32_t handle;
+	uint32_t pad;
 	/** Offset into the object to read from */
-	__u64 offset;
+	uint64_t offset;
 	/** Length of data to read */
-	__u64 size;
+	uint64_t size;
 	/**
 	 * Pointer to write the data into.
 	 *
 	 * This is a fixed-size type for 32/64 compatibility.
 	 */
-	__u64 data_ptr;
+	uint64_t data_ptr;
 };
 
 struct drm_i915_gem_pwrite {
 	/** Handle for the object being written to. */
-	__u32 handle;
-	__u32 pad;
+	uint32_t handle;
+	uint32_t pad;
 	/** Offset into the object to write to */
-	__u64 offset;
+	uint64_t offset;
 	/** Length of data to write */
-	__u64 size;
+	uint64_t size;
 	/**
 	 * Pointer to read the data from.
 	 *
 	 * This is a fixed-size type for 32/64 compatibility.
 	 */
-	__u64 data_ptr;
+	uint64_t data_ptr;
 };
 
 struct drm_i915_gem_mmap {
 	/** Handle for the object being mapped. */
-	__u32 handle;
-	__u32 pad;
+	uint32_t handle;
+	uint32_t pad;
 	/** Offset in the object to map. */
-	__u64 offset;
+	uint64_t offset;
 	/**
 	 * Length of data to map.
 	 *
 	 * The value will be page-aligned.
 	 */
-	__u64 size;
+	uint64_t size;
 	/**
 	 * Returned pointer the data was mapped at.
 	 *
 	 * This is a fixed-size type for 32/64 compatibility.
 	 */
-	__u64 addr_ptr;
+	uint64_t addr_ptr;
 };
 
 struct drm_i915_gem_mmap_gtt {
 	/** Handle for the object being mapped. */
-	__u32 handle;
-	__u32 pad;
+	uint32_t handle;
+	uint32_t pad;
 	/**
 	 * Fake offset to use for subsequent mmap call
 	 *
 	 * This is a fixed-size type for 32/64 compatibility.
 	 */
-	__u64 offset;
+	uint64_t offset;
 };
 
 struct drm_i915_gem_set_domain {
 	/** Handle for the object */
-	__u32 handle;
+	uint32_t handle;
 
 	/** New read domains */
-	__u32 read_domains;
+	uint32_t read_domains;
 
 	/** New write domain */
-	__u32 write_domain;
+	uint32_t write_domain;
 };
 
 struct drm_i915_gem_sw_finish {
 	/** Handle for the object */
-	__u32 handle;
+	uint32_t handle;
 };
 
 struct drm_i915_gem_relocation_entry {
@@ -452,16 +448,16 @@ struct drm_i915_gem_relocation_entry {
 	 * a relocation list for state buffers and not re-write it per
 	 * exec using the buffer.
 	 */
-	__u32 target_handle;
+	uint32_t target_handle;
 
 	/**
 	 * Value to be added to the offset of the target buffer to make up
 	 * the relocation entry.
 	 */
-	__u32 delta;
+	uint32_t delta;
 
 	/** Offset in the buffer the relocation entry will be written into */
-	__u64 offset;
+	uint64_t offset;
 
 	/**
 	 * Offset value of the target buffer that the relocation entry was last
@@ -471,12 +467,12 @@ struct drm_i915_gem_relocation_entry {
 	 * and writing the relocation.  This value is written back out by
 	 * the execbuffer ioctl when the relocation is written.
 	 */
-	__u64 presumed_offset;
+	uint64_t presumed_offset;
 
 	/**
 	 * Target memory domains read by this operation.
 	 */
-	__u32 read_domains;
+	uint32_t read_domains;
 
 	/**
 	 * Target memory domains written by this operation.
@@ -485,7 +481,7 @@ struct drm_i915_gem_relocation_entry {
 	 * execbuffer operation, so that where there are conflicts,
 	 * the application will get -EINVAL back.
 	 */
-	__u32 write_domain;
+	uint32_t write_domain;
 };
 
 /** @{
@@ -516,24 +512,24 @@ struct drm_i915_gem_exec_object {
 	 * User's handle for a buffer to be bound into the GTT for this
 	 * operation.
 	 */
-	__u32 handle;
+	uint32_t handle;
 
 	/** Number of relocations to be performed on this buffer */
-	__u32 relocation_count;
+	uint32_t relocation_count;
 	/**
 	 * Pointer to array of struct drm_i915_gem_relocation_entry containing
 	 * the relocations to be performed in this buffer.
 	 */
-	__u64 relocs_ptr;
+	uint64_t relocs_ptr;
 
 	/** Required alignment in graphics aperture */
-	__u64 alignment;
+	uint64_t alignment;
 
 	/**
 	 * Returned value of the updated offset of the object, for future
 	 * presumed_offset writes.
 	 */
-	__u64 offset;
+	uint64_t offset;
 };
 
 struct drm_i915_gem_execbuffer {
@@ -547,44 +543,44 @@ struct drm_i915_gem_execbuffer {
 	 * a buffer is performing refer to buffers that have already appeared
 	 * in the validate list.
 	 */
-	__u64 buffers_ptr;
-	__u32 buffer_count;
+	uint64_t buffers_ptr;
+	uint32_t buffer_count;
 
 	/** Offset in the batchbuffer to start execution from. */
-	__u32 batch_start_offset;
+	uint32_t batch_start_offset;
 	/** Bytes used in batchbuffer from batch_start_offset */
-	__u32 batch_len;
-	__u32 DR1;
-	__u32 DR4;
-	__u32 num_cliprects;
+	uint32_t batch_len;
+	uint32_t DR1;
+	uint32_t DR4;
+	uint32_t num_cliprects;
 	/** This is a struct drm_clip_rect *cliprects */
-	__u64 cliprects_ptr;
+	uint64_t cliprects_ptr;
 };
 
 struct drm_i915_gem_pin {
 	/** Handle of the buffer to be pinned. */
-	__u32 handle;
-	__u32 pad;
+	uint32_t handle;
+	uint32_t pad;
 
 	/** alignment required within the aperture */
-	__u64 alignment;
+	uint64_t alignment;
 
 	/** Returned GTT offset of the buffer. */
-	__u64 offset;
+	uint64_t offset;
 };
 
 struct drm_i915_gem_unpin {
 	/** Handle of the buffer to be unpinned. */
-	__u32 handle;
-	__u32 pad;
+	uint32_t handle;
+	uint32_t pad;
 };
 
 struct drm_i915_gem_busy {
 	/** Handle of the buffer to check for busy */
-	__u32 handle;
+	uint32_t handle;
 
 	/** Return busy status (1 if busy, 0 if idle) */
-	__u32 busy;
+	uint32_t busy;
 };
 
 #define I915_TILING_NONE	0
@@ -598,13 +594,10 @@ struct drm_i915_gem_busy {
 #define I915_BIT_6_SWIZZLE_9_10_11	4
 /* Not seen by userland */
 #define I915_BIT_6_SWIZZLE_UNKNOWN	5
-/* Seen by userland. */
-#define I915_BIT_6_SWIZZLE_9_17		6
-#define I915_BIT_6_SWIZZLE_9_10_17	7
 
 struct drm_i915_gem_set_tiling {
 	/** Handle of the buffer to have its tiling state updated */
-	__u32 handle;
+	uint32_t handle;
 
 	/**
 	 * Tiling mode for the object (I915_TILING_NONE, I915_TILING_X,
@@ -618,72 +611,47 @@ struct drm_i915_gem_set_tiling {
 	 *
 	 * Buffer contents become undefined when changing tiling_mode.
 	 */
-	__u32 tiling_mode;
+	uint32_t tiling_mode;
 
 	/**
 	 * Stride in bytes for the object when in I915_TILING_X or
 	 * I915_TILING_Y.
 	 */
-	__u32 stride;
+	uint32_t stride;
 
 	/**
 	 * Returned address bit 6 swizzling required for CPU access through
 	 * mmap mapping.
 	 */
-	__u32 swizzle_mode;
+	uint32_t swizzle_mode;
 };
 
 struct drm_i915_gem_get_tiling {
 	/** Handle of the buffer to get tiling state for. */
-	__u32 handle;
+	uint32_t handle;
 
 	/**
 	 * Current tiling mode for the object (I915_TILING_NONE, I915_TILING_X,
 	 * I915_TILING_Y).
 	 */
-	__u32 tiling_mode;
+	uint32_t tiling_mode;
 
 	/**
 	 * Returned address bit 6 swizzling required for CPU access through
 	 * mmap mapping.
 	 */
-	__u32 swizzle_mode;
+	uint32_t swizzle_mode;
 };
 
 struct drm_i915_gem_get_aperture {
 	/** Total size of the aperture used by i915_gem_execbuffer, in bytes */
-	__u64 aper_size;
+	uint64_t aper_size;
 
 	/**
 	 * Available space in the aperture used by i915_gem_execbuffer, in
 	 * bytes
 	 */
-	__u64 aper_available_size;
-};
-
-struct drm_i915_get_pipe_from_crtc_id {
-	/** ID of CRTC being requested **/
-	__u32 crtc_id;
-
-	/** pipe of requested CRTC **/
-	__u32 pipe;
-};
-
-#define I915_MADV_WILLNEED 0
-#define I915_MADV_DONTNEED 1
-#define __I915_MADV_PURGED 2 /* internal state */
-
-struct drm_i915_gem_madvise {
-	/** Handle of the buffer to change the backing store advice */
-	__u32 handle;
-
-	/* Advice: either the buffer will be needed again in the near future,
-	 *         or wont be and could be discarded under memory pressure.
-	 */
-	__u32 madv;
-
-	/** Whether the backing store still exists. */
-	__u32 retained;
+	uint64_t aper_available_size;
 };
 
 #endif				/* _I915_DRM_H_ */

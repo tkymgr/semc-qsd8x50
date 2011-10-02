@@ -3,9 +3,140 @@
 
 /*
  * Cpumasks provide a bitmap suitable for representing the
- * set of CPU's in a system, one bit position per CPU number.  In general,
- * only nr_cpu_ids (<= NR_CPUS) bits are valid.
+ * set of CPU's in a system, one bit position per CPU number.
+ *
+ * The new cpumask_ ops take a "struct cpumask *"; the old ones
+ * use cpumask_t.
+ *
+ * See detailed comments in the file linux/bitmap.h describing the
+ * data type on which these cpumasks are based.
+ *
+ * For details of cpumask_scnprintf() and cpumask_parse_user(),
+ * see bitmap_scnprintf() and bitmap_parse_user() in lib/bitmap.c.
+ * For details of cpulist_scnprintf() and cpulist_parse(), see
+ * bitmap_scnlistprintf() and bitmap_parselist(), also in bitmap.c.
+ * For details of cpu_remap(), see bitmap_bitremap in lib/bitmap.c
+ * For details of cpus_remap(), see bitmap_remap in lib/bitmap.c.
+ * For details of cpus_onto(), see bitmap_onto in lib/bitmap.c.
+ * For details of cpus_fold(), see bitmap_fold in lib/bitmap.c.
+ *
+ * . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+ * Note: The alternate operations with the suffix "_nr" are used
+ *       to limit the range of the loop to nr_cpu_ids instead of
+ *       NR_CPUS when NR_CPUS > 64 for performance reasons.
+ *       If NR_CPUS is <= 64 then most assembler bitmask
+ *       operators execute faster with a constant range, so
+ *       the operator will continue to use NR_CPUS.
+ *
+ *       Another consideration is that nr_cpu_ids is initialized
+ *       to NR_CPUS and isn't lowered until the possible cpus are
+ *       discovered (including any disabled cpus).  So early uses
+ *       will span the entire range of NR_CPUS.
+ * . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+ *
+ * The obsolescent cpumask operations are:
+ *
+ * void cpu_set(cpu, mask)		turn on bit 'cpu' in mask
+ * void cpu_clear(cpu, mask)		turn off bit 'cpu' in mask
+ * void cpus_setall(mask)		set all bits
+ * void cpus_clear(mask)		clear all bits
+ * int cpu_isset(cpu, mask)		true iff bit 'cpu' set in mask
+ * int cpu_test_and_set(cpu, mask)	test and set bit 'cpu' in mask
+ *
+ * void cpus_and(dst, src1, src2)	dst = src1 & src2  [intersection]
+ * void cpus_or(dst, src1, src2)	dst = src1 | src2  [union]
+ * void cpus_xor(dst, src1, src2)	dst = src1 ^ src2
+ * void cpus_andnot(dst, src1, src2)	dst = src1 & ~src2
+ * void cpus_complement(dst, src)	dst = ~src
+ *
+ * int cpus_equal(mask1, mask2)		Does mask1 == mask2?
+ * int cpus_intersects(mask1, mask2)	Do mask1 and mask2 intersect?
+ * int cpus_subset(mask1, mask2)	Is mask1 a subset of mask2?
+ * int cpus_empty(mask)			Is mask empty (no bits sets)?
+ * int cpus_full(mask)			Is mask full (all bits sets)?
+ * int cpus_weight(mask)		Hamming weigh - number of set bits
+ * int cpus_weight_nr(mask)		Same using nr_cpu_ids instead of NR_CPUS
+ *
+ * void cpus_shift_right(dst, src, n)	Shift right
+ * void cpus_shift_left(dst, src, n)	Shift left
+ *
+ * int first_cpu(mask)			Number lowest set bit, or NR_CPUS
+ * int next_cpu(cpu, mask)		Next cpu past 'cpu', or NR_CPUS
+ * int next_cpu_nr(cpu, mask)		Next cpu past 'cpu', or nr_cpu_ids
+ *
+ * cpumask_t cpumask_of_cpu(cpu)	Return cpumask with bit 'cpu' set
+ *					(can be used as an lvalue)
+ * CPU_MASK_ALL				Initializer - all bits set
+ * CPU_MASK_NONE			Initializer - no bits set
+ * unsigned long *cpus_addr(mask)	Array of unsigned long's in mask
+ *
+ * CPUMASK_ALLOC kmalloc's a structure that is a composite of many cpumask_t
+ * variables, and CPUMASK_PTR provides pointers to each field.
+ *
+ * The structure should be defined something like this:
+ * struct my_cpumasks {
+ *	cpumask_t mask1;
+ *	cpumask_t mask2;
+ * };
+ *
+ * Usage is then:
+ *	CPUMASK_ALLOC(my_cpumasks);
+ *	CPUMASK_PTR(mask1, my_cpumasks);
+ *	CPUMASK_PTR(mask2, my_cpumasks);
+ *
+ *	--- DO NOT reference cpumask_t pointers until this check ---
+ *	if (my_cpumasks == NULL)
+ *		"kmalloc failed"...
+ *
+ * References are now pointers to the cpumask_t variables (*mask1, ...)
+ *
+ *if NR_CPUS > BITS_PER_LONG
+ *   CPUMASK_ALLOC(m)			Declares and allocates struct m *m =
+ *						kmalloc(sizeof(*m), GFP_KERNEL)
+ *   CPUMASK_FREE(m)			Macro for kfree(m)
+ *else
+ *   CPUMASK_ALLOC(m)			Declares struct m _m, *m = &_m
+ *   CPUMASK_FREE(m)			Nop
+ *endif
+ *   CPUMASK_PTR(v, m)			Declares cpumask_t *v = &(m->v)
+ * ------------------------------------------------------------------------
+ *
+ * int cpumask_scnprintf(buf, len, mask) Format cpumask for printing
+ * int cpumask_parse_user(ubuf, ulen, mask)	Parse ascii string as cpumask
+ * int cpulist_scnprintf(buf, len, mask) Format cpumask as list for printing
+ * int cpulist_parse(buf, map)		Parse ascii string as cpulist
+ * int cpu_remap(oldbit, old, new)	newbit = map(old, new)(oldbit)
+ * void cpus_remap(dst, src, old, new)	*dst = map(old, new)(src)
+ * void cpus_onto(dst, orig, relmap)	*dst = orig relative to relmap
+ * void cpus_fold(dst, orig, sz)	dst bits = orig bits mod sz
+ *
+ * for_each_cpu_mask(cpu, mask)		for-loop cpu over mask using NR_CPUS
+ * for_each_cpu_mask_nr(cpu, mask)	for-loop cpu over mask using nr_cpu_ids
+ *
+ * int num_online_cpus()		Number of online CPUs
+ * int num_possible_cpus()		Number of all possible CPUs
+ * int num_present_cpus()		Number of present CPUs
+ *
+ * int cpu_online(cpu)			Is some cpu online?
+ * int cpu_possible(cpu)		Is some cpu possible?
+ * int cpu_present(cpu)			Is some cpu present (can schedule)?
+ *
+ * int any_online_cpu(mask)		First online cpu in mask
+ *
+ * for_each_possible_cpu(cpu)		for-loop cpu over cpu_possible_map
+ * for_each_online_cpu(cpu)		for-loop cpu over cpu_online_map
+ * for_each_present_cpu(cpu)		for-loop cpu over cpu_present_map
+ *
+ * Subtlety:
+ * 1) The 'type-checked' form of cpu_isset() causes gcc (3.3.2, anyway)
+ *    to generate slightly worse code.  Note for example the additional
+ *    40 lines of assembly code compiling the "for each possible cpu"
+ *    loops buried in the disk_stat_read() macros calls when compiling
+ *    drivers/block/genhd.c (arch i386, CONFIG_SMP=y).  So use a simple
+ *    one-line #define for cpu_isset(), instead of wrapping an inline
+ *    inside a macro, the way we do the other calls.
  */
+
 #include <linux/kernel.h>
 #include <linux/threads.h>
 #include <linux/bitmap.h>
@@ -140,11 +271,14 @@ static inline void __cpus_shift_left(cpumask_t *dstp,
 #endif /* !CONFIG_DISABLE_OBSOLETE_CPUMASK_FUNCTIONS */
 
 /**
- * cpumask_bits - get the bits in a cpumask
- * @maskp: the struct cpumask *
+ * to_cpumask - convert an NR_CPUS bitmap to a struct cpumask *
+ * @bitmap: the bitmap
  *
- * You should only assume nr_cpu_ids bits of this mask are valid.  This is
- * a macro so it's const-correct.
+ * There are a few places where cpumask_var_t isn't appropriate and
+ * static cpumasks must be used (eg. very early boot), yet we don't
+ * expose the definition of 'struct cpumask'.
+ *
+ * This does the conversion, and can be used as a constant initializer.
  */
 #define to_cpumask(bitmap)						\
 	((struct cpumask *)(1 ? (bitmap)				\

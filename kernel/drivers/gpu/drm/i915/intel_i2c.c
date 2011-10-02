@@ -34,6 +34,21 @@
 #include "i915_drm.h"
 #include "i915_drv.h"
 
+void intel_i2c_quirk_set(struct drm_device *dev, bool enable)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	/* When using bit bashing for I2C, this bit needs to be set to 1 */
+	if (!IS_IGD(dev))
+		return;
+	if (enable)
+		I915_WRITE(DSPCLK_GATE_D,
+			I915_READ(DSPCLK_GATE_D) | DPCUNIT_CLOCK_GATE_DISABLE);
+	else
+		I915_WRITE(DSPCLK_GATE_D,
+			I915_READ(DSPCLK_GATE_D) & (~DPCUNIT_CLOCK_GATE_DISABLE));
+}
+
 /*
  * Intel GPIO access functions
  */
@@ -103,12 +118,30 @@ static void set_data(void *data, int state_high)
 	udelay(I2C_RISEFALL_TIME); /* wait for the line to change state */
 }
 
+/* Clears the GMBUS setup.  Our driver doesn't make use of the GMBUS I2C
+ * engine, but if the BIOS leaves it enabled, then that can break our use
+ * of the bit-banging I2C interfaces.  This is notably the case with the
+ * Mac Mini in EFI mode.
+ */
+void
+intel_i2c_reset_gmbus(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	if (IS_IGDNG(dev)) {
+		I915_WRITE(PCH_GMBUS0, 0);
+	} else {
+		I915_WRITE(GMBUS0, 0);
+	}
+}
+
 /**
  * intel_i2c_create - instantiate an Intel i2c bus using the specified GPIO reg
  * @dev: DRM device
  * @output: driver specific output device
  * @reg: GPIO reg to use
  * @name: name for this bus
+ * @slave_addr: slave address (if fixed)
  *
  * Creates and registers a new i2c bus with the Linux i2c layer, for use
  * in output probing and control (e.g. DDC or SDVO control functions).
@@ -124,8 +157,8 @@ static void set_data(void *data, int state_high)
  *   %GPIOH
  * see PRM for details on how these different busses are used.
  */
-struct intel_i2c_chan *intel_i2c_create(struct drm_device *dev, const u32 reg,
-					const char *name)
+struct i2c_adapter *intel_i2c_create(struct drm_device *dev, const u32 reg,
+				     const char *name)
 {
 	struct intel_i2c_chan *chan;
 
@@ -152,12 +185,16 @@ struct intel_i2c_chan *intel_i2c_create(struct drm_device *dev, const u32 reg,
 	if(i2c_bit_add_bus(&chan->adapter))
 		goto out_free;
 
+	intel_i2c_reset_gmbus(dev);
+
 	/* JJJ:  raise SCL and SDA? */
+	intel_i2c_quirk_set(dev, true);
 	set_data(chan, 1);
 	set_clock(chan, 1);
+	intel_i2c_quirk_set(dev, false);
 	udelay(20);
 
-	return chan;
+	return &chan->adapter;
 
 out_free:
 	kfree(chan);
@@ -170,11 +207,16 @@ out_free:
  *
  * Unregister the adapter from the i2c layer, then free the structure.
  */
-void intel_i2c_destroy(struct intel_i2c_chan *chan)
+void intel_i2c_destroy(struct i2c_adapter *adapter)
 {
-	if (!chan)
+	struct intel_i2c_chan *chan;
+
+	if (!adapter)
 		return;
 
+	chan = container_of(adapter,
+			    struct intel_i2c_chan,
+			    adapter);
 	i2c_del_adapter(&chan->adapter);
 	kfree(chan);
 }

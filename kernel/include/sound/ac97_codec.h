@@ -32,9 +32,6 @@
 #include "control.h"
 #include "info.h"
 
-/* maximum number of devices on the AC97 bus */
-#define	AC97_BUS_MAX_DEVICES	4
-
 /*
  *  AC'97 codec registers
  */
@@ -644,11 +641,5 @@ int snd_ac97_pcm_double_rate_rules(struct snd_pcm_runtime *runtime);
 
 /* ad hoc AC97 device driver access */
 extern struct bus_type ac97_bus_type;
-
-/* AC97 platform_data adding function */
-static inline void snd_ac97_dev_add_pdata(struct snd_ac97 *ac97, void *data)
-{
-	ac97->dev.platform_data = data;
-}
 
 #endif /* __SOUND_AC97_CODEC_H */

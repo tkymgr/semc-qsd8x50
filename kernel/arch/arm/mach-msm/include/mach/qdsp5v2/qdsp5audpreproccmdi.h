@@ -129,7 +129,7 @@ struct audpreproc_audrec_cmd_parm_cfg_aac {
 #define AUDREC_SBC_ENC_PARAM_MODE_DUAL_MASK			0x0040
 #define AUDREC_SBC_ENC_PARAM_MODE_STEREO_MASK			0x0080
 #define AUDREC_SBC_ENC_PARAM_MODE_JOINT_STEREO_MASK		0x00C0
-#define AUDREC_SBC_ENC_PARAM_NUM_SUB_BANDS_MASK			0x0010
+#define AUDREC_SBC_ENC_PARAM_NUM_SUB_BANDS_MASK 		0x0004
 #define AUDREC_SBC_ENC_PARAM_NUM_SUB_BANDS_8_MASK		0x0001
 #define AUDREC_SBC_ENC_PARAM_NUM_SUB_BLOCKS_MASK		0x0000
 #define AUDREC_SBC_ENC_PARAM_NUM_SUB_BLOCKS_4_MASK		0x0000
@@ -225,7 +225,24 @@ struct audpreproc_afe_cmd_audio_record_cfg {
 	unsigned short stream_id;
 	unsigned short destination_activity;
 	unsigned short source_mix_mask;
-	unsigned short reserved[2];
+	unsigned short pipe_id;
+	unsigned short reserved;
+} __attribute__((packed));
+
+/*
+ * Command to configure Tunnel(RT) or Non-Tunnel(FTRT) mode
+ */
+#define AUDPREPROC_AUDREC_CMD_ROUTING_MODE 0x0003
+#define	AUDPREPROC_AUDREC_CMD_ROUTING_MODE_LEN	\
+	sizeof(struct audpreproc_audrec_cmd_routing_mode)
+
+#define AUDIO_ROUTING_MODE_FTRT		0x0001
+#define AUDIO_ROUTING_MODE_RT		0x0002
+
+struct audpreproc_audrec_cmd_routing_mode {
+	unsigned short cmd_id;
+	unsigned short stream_id;
+	unsigned short routing_mode;
 } __attribute__((packed));
 
 /*

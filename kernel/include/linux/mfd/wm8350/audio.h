@@ -490,7 +490,6 @@
 /*
  * R231 (0xE7) - Jack Status
  */
-#define WM8350_JACK_L_LVL			0x0800
 #define WM8350_JACK_R_LVL                       0x0400
 
 /*

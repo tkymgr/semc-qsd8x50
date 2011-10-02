@@ -31,18 +31,8 @@
 #define IR_TYPE_PD      2 /* Pulse distance encoded IR */
 #define IR_TYPE_OTHER  99
 
-#define IR_KEYTAB_TYPE u32
-#define IR_KEYTAB_SIZE	128  /* enougth for rc5, probably need more some day */
-
-struct ir_scancode {
-	u16	scancode;
-	u32	keycode;
-};
-
-struct ir_scancode_table {
-	struct ir_scancode *scan;
-	int size;
-};
+#define IR_KEYTAB_TYPE	u32
+#define IR_KEYTAB_SIZE	128  // enougth for rc5, probably need more some day ...
 
 #define IR_KEYCODE(tab,code)	(((unsigned)code < IR_KEYTAB_SIZE) \
 				 ? tab[code] : KEY_RESERVED)

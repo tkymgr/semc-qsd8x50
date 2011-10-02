@@ -10,8 +10,6 @@
  *
  */
 
-struct regulator_init_data;
-
 /**
  * bq24022_mach_info - platform data for bq24022
  * @gpio_nce: GPIO line connected to the nCE pin, used to enable / disable charging
@@ -20,5 +18,4 @@ struct regulator_init_data;
 struct bq24022_mach_info {
 	int gpio_nce;
 	int gpio_iset2;
-	struct regulator_init_data *init_data;
 };

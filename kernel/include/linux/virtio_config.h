@@ -96,8 +96,7 @@ static inline bool virtio_has_feature(const struct virtio_device *vdev,
 				      unsigned int fbit)
 {
 	/* Did you forget to fix assumptions on max features? */
-	if (__builtin_constant_p(fbit))
-		BUILD_BUG_ON(fbit >= 32);
+	MAYBE_BUILD_BUG_ON(fbit >= 32);
 
 	virtio_check_driver_offered_feature(vdev, fbit);
 	return test_bit(fbit, vdev->features);

@@ -68,10 +68,10 @@ static int set_update_marker(struct ubi_device *ubi, struct ubi_volume *vol)
 	       sizeof(struct ubi_vtbl_record));
 	vtbl_rec.upd_marker = 1;
 
-	mutex_lock(&ubi->volumes_mutex);
+	mutex_lock(&ubi->device_mutex);
 	err = ubi_change_vtbl_record(ubi, vol->vol_id, &vtbl_rec);
-	mutex_unlock(&ubi->volumes_mutex);
 	vol->upd_marker = 1;
+	mutex_unlock(&ubi->device_mutex);
 	return err;
 }
 
@@ -109,10 +109,10 @@ static int clear_update_marker(struct ubi_device *ubi, struct ubi_volume *vol,
 			vol->last_eb_bytes = vol->usable_leb_size;
 	}
 
-	mutex_lock(&ubi->volumes_mutex);
+	mutex_lock(&ubi->device_mutex);
 	err = ubi_change_vtbl_record(ubi, vol->vol_id, &vtbl_rec);
-	mutex_unlock(&ubi->volumes_mutex);
 	vol->upd_marker = 0;
+	mutex_unlock(&ubi->device_mutex);
 	return err;
 }
 
@@ -147,12 +147,15 @@ int ubi_start_update(struct ubi_device *ubi, struct ubi_volume *vol,
 	}
 
 	if (bytes == 0) {
+		err = ubi_wl_flush(ubi);
+		if (err)
+			return err;
+
 		err = clear_update_marker(ubi, vol, 0);
 		if (err)
 			return err;
-		err = ubi_wl_flush(ubi);
-		if (!err)
-			vol->updating = 0;
+		vol->updating = 0;
+		return 0;
 	}
 
 	vol->upd_buf = vmalloc(ubi->leb_size);
@@ -362,16 +365,16 @@ int ubi_more_update_data(struct ubi_device *ubi, struct ubi_volume *vol,
 
 	ubi_assert(vol->upd_received <= vol->upd_bytes);
 	if (vol->upd_received == vol->upd_bytes) {
+		err = ubi_wl_flush(ubi);
+		if (err)
+			return err;
 		/* The update is finished, clear the update marker */
 		err = clear_update_marker(ubi, vol, vol->upd_bytes);
 		if (err)
 			return err;
-		err = ubi_wl_flush(ubi);
-		if (err == 0) {
-			vol->updating = 0;
-			err = to_write;
-			vfree(vol->upd_buf);
-		}
+		vol->updating = 0;
+		err = to_write;
+		vfree(vol->upd_buf);
 	}
 
 	return err;
