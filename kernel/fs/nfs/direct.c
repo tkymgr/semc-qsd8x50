@@ -255,10 +255,13 @@ static void nfs_direct_read_release(void *calldata)
 
 	if (put_dreq(dreq))
 		nfs_direct_complete(dreq);
-	nfs_readdata_release(calldata);
+	nfs_readdata_free(data);
 }
 
 static const struct rpc_call_ops nfs_read_direct_ops = {
+#if defined(CONFIG_NFS_V4_1)
+	.rpc_call_prepare = nfs_read_prepare,
+#endif /* CONFIG_NFS_V4_1 */
 	.rpc_call_done = nfs_direct_read_result,
 	.rpc_release = nfs_direct_read_release,
 };
@@ -311,14 +314,14 @@ static ssize_t nfs_direct_read_schedule_segment(struct nfs_direct_req *dreq,
 					data->npages, 1, 0, data->pagevec, NULL);
 		up_read(&current->mm->mmap_sem);
 		if (result < 0) {
-			nfs_readdata_release(data);
+			nfs_readdata_free(data);
 			break;
 		}
 		if ((unsigned)result < data->npages) {
 			bytes = result * PAGE_SIZE;
 			if (bytes <= pgbase) {
 				nfs_direct_release_pages(data->pagevec, result);
-				nfs_readdata_release(data);
+				nfs_readdata_free(data);
 				break;
 			}
 			bytes -= pgbase;
@@ -331,7 +334,7 @@ static ssize_t nfs_direct_read_schedule_segment(struct nfs_direct_req *dreq,
 		data->inode = inode;
 		data->cred = msg.rpc_cred;
 		data->args.fh = NFS_FH(inode);
-		data->args.context = get_nfs_open_context(ctx);
+		data->args.context = ctx;
 		data->args.offset = pos;
 		data->args.pgbase = pgbase;
 		data->args.pages = data->pagevec;
@@ -339,6 +342,7 @@ static ssize_t nfs_direct_read_schedule_segment(struct nfs_direct_req *dreq,
 		data->res.fattr = &data->fattr;
 		data->res.eof = 0;
 		data->res.count = bytes;
+		nfs_fattr_init(&data->fattr);
 		msg.rpc_argp = &data->args;
 		msg.rpc_resp = &data->res;
 
@@ -438,7 +442,7 @@ static void nfs_direct_free_writedata(struct nfs_direct_req *dreq)
 		struct nfs_write_data *data = list_entry(dreq->rewrite_list.next, struct nfs_write_data, pages);
 		list_del(&data->pages);
 		nfs_direct_release_pages(data->pagevec, data->npages);
-		nfs_writedata_release(data);
+		nfs_writedata_free(data);
 	}
 }
 
@@ -454,6 +458,7 @@ static void nfs_direct_write_reschedule(struct nfs_direct_req *dreq)
 	};
 	struct rpc_task_setup task_setup_data = {
 		.rpc_client = NFS_CLIENT(inode),
+		.rpc_message = &msg,
 		.callback_ops = &nfs_write_direct_ops,
 		.workqueue = nfsiod_workqueue,
 		.flags = RPC_TASK_ASYNC,
@@ -531,10 +536,13 @@ static void nfs_direct_commit_release(void *calldata)
 
 	dprintk("NFS: %5u commit returned %d\n", data->task.tk_pid, status);
 	nfs_direct_write_complete(dreq, data->inode);
-	nfs_commitdata_release(calldata);
+	nfs_commit_free(data);
 }
 
 static const struct rpc_call_ops nfs_commit_direct_ops = {
+#if defined(CONFIG_NFS_V4_1)
+	.rpc_call_prepare = nfs_write_prepare,
+#endif /* CONFIG_NFS_V4_1 */
 	.rpc_call_done = nfs_direct_commit_result,
 	.rpc_release = nfs_direct_commit_release,
 };
@@ -564,10 +572,11 @@ static void nfs_direct_commit_schedule(struct nfs_direct_req *dreq)
 	data->args.fh = NFS_FH(data->inode);
 	data->args.offset = 0;
 	data->args.count = 0;
-	data->args.context = get_nfs_open_context(dreq->ctx);
+	data->args.context = dreq->ctx;
 	data->res.count = 0;
 	data->res.fattr = &data->fattr;
 	data->res.verf = &data->verf;
+	nfs_fattr_init(&data->fattr);
 
 	NFS_PROTO(data->inode)->commit_setup(data, &msg);
 
@@ -673,6 +682,9 @@ out_unlock:
 }
 
 static const struct rpc_call_ops nfs_write_direct_ops = {
+#if defined(CONFIG_NFS_V4_1)
+	.rpc_call_prepare = nfs_write_prepare,
+#endif /* CONFIG_NFS_V4_1 */
 	.rpc_call_done = nfs_direct_write_result,
 	.rpc_release = nfs_direct_write_release,
 };
@@ -725,14 +737,14 @@ static ssize_t nfs_direct_write_schedule_segment(struct nfs_direct_req *dreq,
 					data->npages, 0, 0, data->pagevec, NULL);
 		up_read(&current->mm->mmap_sem);
 		if (result < 0) {
-			nfs_writedata_release(data);
+			nfs_writedata_free(data);
 			break;
 		}
 		if ((unsigned)result < data->npages) {
 			bytes = result * PAGE_SIZE;
 			if (bytes <= pgbase) {
 				nfs_direct_release_pages(data->pagevec, result);
-				nfs_writedata_release(data);
+				nfs_writedata_free(data);
 				break;
 			}
 			bytes -= pgbase;
@@ -747,7 +759,7 @@ static ssize_t nfs_direct_write_schedule_segment(struct nfs_direct_req *dreq,
 		data->inode = inode;
 		data->cred = msg.rpc_cred;
 		data->args.fh = NFS_FH(inode);
-		data->args.context = get_nfs_open_context(ctx);
+		data->args.context = ctx;
 		data->args.offset = pos;
 		data->args.pgbase = pgbase;
 		data->args.pages = data->pagevec;
@@ -756,6 +768,7 @@ static ssize_t nfs_direct_write_schedule_segment(struct nfs_direct_req *dreq,
 		data->res.fattr = &data->fattr;
 		data->res.count = bytes;
 		data->res.verf = &data->verf;
+		nfs_fattr_init(&data->fattr);
 
 		task_setup_data.task = &data->task;
 		task_setup_data.callback_data = data;
@@ -924,9 +937,6 @@ out:
  * the new i_size and this client must read the updated size
  * back into its cache.  We let the server do generic write
  * parameter checking and report problems.
- *
- * We also avoid an unnecessary invocation of generic_osync_inode(),
- * as it is fairly meaningless to sync the metadata of an NFS file.
  *
  * We eliminate local atime updates, see direct read above.
  *

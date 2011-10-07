@@ -315,6 +315,7 @@ struct phy_device {
 
 	/* Interrupt and Polling infrastructure */
 	struct work_struct phy_queue;
+	struct delayed_work state_queue;
 	struct work_struct state_queue;
 	struct timer_list phy_timer;
 	atomic_t irq_disable;
@@ -389,6 +390,12 @@ struct phy_driver {
 	/* Enables or disables interrupts */
 	int (*config_intr)(struct phy_device *phydev);
 
+	/*
+	 * Checks if the PHY generated an interrupt.
+	 * For multi-PHY devices with shared PHY interrupt pin
+	 */
+	int (*did_interrupt)(struct phy_device *phydev);
+
 	/* Clears up any memory if needed */
 	void (*remove)(struct phy_device *phydev);
 
@@ -439,10 +446,16 @@ static inline int phy_write(struct phy_device *phydev, u16 regnum, u16 val)
 
 int get_phy_id(struct mii_bus *bus, int addr, u32 *phy_id);
 struct phy_device* get_phy_device(struct mii_bus *bus, int addr);
+int phy_device_register(struct phy_device *phy);
 int phy_clear_interrupt(struct phy_device *phydev);
 int phy_config_interrupt(struct phy_device *phydev, u32 interrupts);
+int phy_attach_direct(struct net_device *dev, struct phy_device *phydev,
+		u32 flags, phy_interface_t interface);
 struct phy_device * phy_attach(struct net_device *dev,
 		const char *bus_id, u32 flags, phy_interface_t interface);
+int phy_connect_direct(struct net_device *dev, struct phy_device *phydev,
+		void (*handler)(struct net_device *), u32 flags,
+		phy_interface_t interface);
 struct phy_device * phy_connect(struct net_device *dev, const char *bus_id,
 		void (*handler)(struct net_device *), u32 flags,
 		phy_interface_t interface);

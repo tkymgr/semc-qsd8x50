@@ -715,13 +715,6 @@ static struct fs_struct *__copy_fs_struct(struct fs_struct *old)
 	return fs;
 }
 
-struct fs_struct *copy_fs_struct(struct fs_struct *old)
-{
-	return __copy_fs_struct(old);
-}
-
-EXPORT_SYMBOL_GPL(copy_fs_struct);
-
 static int copy_fs(unsigned long clone_flags, struct task_struct *tsk)
 {
 	if (clone_flags & CLONE_FS) {

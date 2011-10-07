@@ -594,7 +594,7 @@ out:
  *	delete files so this should be used in 'force' mode only.
  */
 
-static void mark_files_ro(struct super_block *sb)
+void mark_files_ro(struct super_block *sb)
 {
 	struct file *f;
 

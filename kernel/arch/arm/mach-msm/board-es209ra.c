@@ -1140,9 +1140,6 @@ static void __init audio_gpio_init(void)
 			return;
 		}
 	}
-#ifdef CONFIG_MSM_QDSP6
-	set_audio_gpios(msm_audio_resources[1].start);
-#endif
 }
 
 static struct platform_device msm_audio_device = {

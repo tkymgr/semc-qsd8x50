@@ -15,7 +15,6 @@
  * along with this program; if not, you can find it at http://www.fsf.org.
  */
 
-#include <mach/debug_audio_mm.h>
 #include <linux/init.h>
 #include <linux/err.h>
 #include <linux/module.h>
@@ -30,6 +29,7 @@
 #include <asm/dma.h>
 #include <linux/dma-mapping.h>
 #include <mach/qdsp5v2/audio_dev_ctl.h>
+#include <mach/debug_mm.h>
 
 #include "msm7kv2-pcm.h"
 
@@ -115,7 +115,7 @@ void alsa_dsp_event(void *data, unsigned id, uint16_t *msg)
 		break;
 	}
 	case AUDPP_MSG_PCMDMAMISSED:
-		MM_ERR("PCMDMAMISSED %d\n", msg[0]);
+		MM_INFO("PCMDMAMISSED %d\n", msg[0]);
 		prtd->eos_ack++;
 		MM_DBG("PCMDMAMISSED Count per Buffer %d\n", prtd->eos_ack);
 		wake_up(&the_locks.eos_wait);
@@ -156,7 +156,7 @@ static void audpreproc_dsp_event(void *data, unsigned id,  void *msg)
 		break;
 	}
 	case AUDPREPROC_CMD_CFG_DONE_MSG: {
-		MM_DBG("CMD_CFG_DONE_MSG \n");
+		MM_DBG("CMD_CFG_DONE_MSG\n");
 		break;
 	}
 	case AUDPREPROC_CMD_ENC_CFG_DONE_MSG: {
@@ -175,12 +175,12 @@ static void audpreproc_dsp_event(void *data, unsigned id,  void *msg)
 		break;
 	}
 	case AUDPREPROC_CMD_ENC_PARAM_CFG_DONE_MSG: {
-		MM_DBG("CMD_ENC_PARAM_CFG_DONE_MSG \n");
+		MM_DBG("CMD_ENC_PARAM_CFG_DONE_MSG\n");
 		alsa_in_mem_config(prtd);
 		break;
 	}
 	case AUDPREPROC_AFE_CMD_AUDIO_RECORD_CFG_DONE_MSG: {
-		MM_DBG("AFE_CMD_AUDIO_RECORD_CFG_DONE_MSG \n");
+		MM_DBG("AFE_CMD_AUDIO_RECORD_CFG_DONE_MSG\n");
 		wake_up(&the_locks.enable_wait);
 		break;
 	}
@@ -229,7 +229,6 @@ static void audrec_dsp_event(void *data, unsigned id, size_t len,
 		++intcnt;
 		if (prtd->channel_mode == 1) {
 			spin_lock_irqsave(&the_locks.read_dsp_lock, flag);
-			prtd->pcm_irq_pos += prtd->pcm_count;
 			if (prtd->pcm_irq_pos >= prtd->pcm_size)
 				prtd->pcm_irq_pos = 0;
 			spin_unlock_irqrestore(&the_locks.read_dsp_lock, flag);
@@ -238,7 +237,6 @@ static void audrec_dsp_event(void *data, unsigned id, size_t len,
 				prtd->ops->capture(prtd);
 		} else if ((prtd->channel_mode == 0) && (intcnt % 2 == 0)) {
 			spin_lock_irqsave(&the_locks.read_dsp_lock, flag);
-			prtd->pcm_irq_pos += prtd->pcm_count;
 			if (prtd->pcm_irq_pos >= prtd->pcm_size)
 				prtd->pcm_irq_pos = 0;
 			spin_unlock_irqrestore(&the_locks.read_dsp_lock, flag);
@@ -424,6 +422,18 @@ int alsa_in_record_config(struct msm_audio *prtd, int enable)
 	else
 		cmd.destination_activity = AUDIO_RECORDING_TURN_OFF;
 	cmd.source_mix_mask = prtd->source;
+	if (prtd->session_id == 2) {
+		if ((cmd.source_mix_mask &
+			INTERNAL_CODEC_TX_SOURCE_MIX_MASK) ||
+			(cmd.source_mix_mask & AUX_CODEC_TX_SOURCE_MIX_MASK) ||
+			(cmd.source_mix_mask & VOICE_UL_SOURCE_MIX_MASK) ||
+			(cmd.source_mix_mask & VOICE_DL_SOURCE_MIX_MASK)) {
+			cmd.pipe_id = SOURCE_PIPE_1;
+		}
+		if (cmd.source_mix_mask &
+			AUDPP_A2DP_PIPE_SOURCE_MIX_MASK)
+			cmd.pipe_id |= SOURCE_PIPE_0;
+	}
 	for (i = 0; i < sizeof(cmd)/2; i++, ++ptrmem)
 		MM_DBG("cmd[%d]=0x%04x\n", i, *ptrmem);
 	return audpreproc_send_audreccmdqueue(&cmd, sizeof(cmd));
@@ -516,7 +526,7 @@ int alsa_buffer_read(struct msm_audio *prtd, void __user *buf,
 		}
 
 		if (prtd->abort) {
-			MM_DBG(" prtd->abort ! \n");
+			MM_DBG(" prtd->abort !\n");
 			ret = -EPERM; /* Not permitted due to abort */
 			break;
 		}
@@ -614,6 +624,7 @@ static void alsa_get_dsp_frames(struct msm_audio *prtd)
 		else
 			prtd->in_count++;
 
+		prtd->pcm_irq_pos += frame->bytes;
 		alsa_dsp_read_buffer(prtd, prtd->dsp_cnt++);
 		spin_unlock_irqrestore(&the_locks.read_dsp_lock, flag);
 

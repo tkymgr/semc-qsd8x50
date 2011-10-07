@@ -52,7 +52,6 @@
 
 #include "usb_function.h"
 
-#define SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG
 #define EPT_FLAG_IN	0x0001
 #define USB_DIR_MASK	USB_DIR_IN
 #define SETUP_BUF_SIZE	4096
@@ -73,12 +72,6 @@
 
 #define is_phy_45nm()     (PHY_MODEL(ui->phy_info) == USB_PHY_MODEL_45NM)
 #define is_phy_external() (PHY_TYPE(ui->phy_info) == USB_PHY_EXTERNAL)
-
-#ifdef CONFIG_MACH_ES209RA
-#include <linux/power_supply.h>
-int usb_msm_power_source = POWER_SUPPLY_TYPE_BATTERY;
-EXPORT_SYMBOL(usb_msm_power_source);
-#endif /* CONFIG_MACH_ES209RA */
 
 static int pid = 0x9018;
 
@@ -155,9 +148,6 @@ enum charger_type {
 	USB_CHG_TYPE__SDP,
 	USB_CHG_TYPE__CARKIT,
 	USB_CHG_TYPE__WALLCHARGER,
-#ifdef SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG
-	CHG_MIGHT_BE_HOST_PC,
-#endif /*  SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG */
 	USB_CHG_TYPE__INVALID
 };
 
@@ -209,19 +199,6 @@ struct usb_info {
 
 	struct delayed_work work;
 	struct delayed_work chg_legacy_det;
-#ifdef SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG
-	/*
-	* Since some 3rd-party wall chargers don't follow the specification they
-	* can look like HOST PC. To clarify what is actually plugged in we will
-	* monitor the connection status.
-	* As soon as the link is established we consider that it's real HOST PC.
-	* If link is not established within reasonable time we consider  that
-	* it's WALL charger, but we still have a chance to change it to HOST PC
-	* if  the connection is established in the end of ends
-	*/
-#define CHG_TYPE_CHK_POLL_DELAY msecs_to_jiffies(1200)
-	struct delayed_work chg_type_work;
-#endif /* SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG */
 	unsigned phy_status;
 	unsigned phy_fail_count;
 	struct usb_composition *composition;
@@ -308,7 +285,7 @@ static ssize_t print_switch_state(struct switch_dev *sdev, char *buf)
 	return sprintf(buf, "%s\n", (ui->online ? "online" : "offline"));
 }
 
-#define USB_WALLCHARGER_CHG_CURRENT 1800
+#define USB_WALLCHARGER_CHG_CURRENT 900
 static int usb_get_max_power(struct usb_info *ui)
 {
 	unsigned long flags;
@@ -353,22 +330,8 @@ static void usb_chg_legacy_detect(struct work_struct *w)
 		ui->chg_type = temp = USB_CHG_TYPE__WALLCHARGER;
 		goto chg_legacy_det_out;
 	}
-#ifdef SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG
-	if (ui->chg_type == USB_CHG_TYPE__INVALID) {
-		/*
-		* Looks like HOST PC: charrger type will be set when link
-		* is established.
-		*/
-		pr_info("\n*********** Charger Type: might be HOST PC\n\n");
-		ui->chg_type = CHG_MIGHT_BE_HOST_PC;
-		schedule_delayed_work(&ui->chg_type_work, CHG_TYPE_CHK_POLL_DELAY);
-		/* Don't report anything to the charger service */
-		ret = -ENODEV;
-	} else
-		temp = ui->chg_type;
-#else
+
 	ui->chg_type = temp = USB_CHG_TYPE__SDP;
-#endif
 chg_legacy_det_out:
 	spin_unlock_irqrestore(&ui->lock, flags);
 
@@ -405,62 +368,6 @@ chg_legacy_det_out:
 	} else
 		pr_info("\n%s: Standard Downstream Port\n", __func__);
 }
-#ifdef SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG
-static void usb_check_chg_type_work(struct work_struct *w)
-{
-	struct usb_info *ui = container_of(w, struct usb_info, chg_type_work.work);
-	unsigned long flags;
-	int ui_chg_type;
-	int maxpower;
-
-	spin_lock_irqsave(&ui->lock, flags);
-	ui_chg_type = ui->chg_type;
-	spin_unlock_irqrestore(&ui->lock, flags);
-
-	if (ui_chg_type == USB_CHG_TYPE__WALLCHARGER) {
-		/*
-		* It looks like charger has been defined as WALL by mistake,
-		* but now usb link is established and we gonna change the type
-		* to HOST_PC
-		*/
-		pr_info("\n*********** Charger Type: disconnecting WALL charger\n\n");
-		msm_chg_usb_charger_disconnected();
-		spin_lock_irqsave(&ui->lock, flags);
-		ui->chg_type = USB_CHG_TYPE__SDP;
-		spin_unlock_irqrestore(&ui->lock, flags);
-		pr_info("\n*********** Charger Type: HOST PC\n\n");
-		msm_chg_usb_charger_connected(USB_CHG_TYPE__SDP);
-
-	} else if (ui_chg_type == USB_CHG_TYPE__SDP) {
-		pr_info("\n*********** Charger Type: HOST PC\n\n");
-		msm_chg_usb_charger_connected(USB_CHG_TYPE__SDP);
-
-	} else {
-		/*
-		* all the reasonable time expired: seems it's WALL charger.
-		*/
-		pr_info("\n*********** Charger Type looks like HOST PC"
-				" but is actually WALL CHARGER\n\n");
-
-		spin_lock_irqsave(&ui->lock, flags);
-		ui->chg_type = USB_CHG_TYPE__WALLCHARGER;
-		if (ui->usb_state == USB_STATE_NOTATTACHED) {
-			spin_unlock_irqrestore(&ui->lock, flags);
-			return;
-		}
-		ui->in_lpm = 1;
-		spin_unlock_irqrestore(&ui->lock, flags);
-		msm_chg_usb_charger_connected(USB_CHG_TYPE__WALLCHARGER);
-
-		msm_hsusb_suspend_locks_acquire(ui, 0);
-	}
-
-	maxpower = usb_get_max_power(ui);
-	if (maxpower > 0)
-		msm_chg_usb_i_is_available(maxpower);
-
-}
-#endif /* SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG */
 
 int usb_msm_get_next_strdesc_id(char *str)
 {
@@ -923,6 +830,8 @@ static void usb_ept_start(struct usb_endpoint *ept)
 
 	/* memory barrier to flush the data before priming endpoint*/
 	dma_coherent_pre_ops();
+	/* start the endpoint */
+	writel(1 << ept->bit, USB_ENDPTPRIME);
 
 	/* mark this chain of requests as live */
 	while (req) {
@@ -931,9 +840,6 @@ static void usb_ept_start(struct usb_endpoint *ept)
 			break;
 		req = req->next;
 	}
-
-	/* start the endpoint */
-	writel(1 << ept->bit, USB_ENDPTPRIME);
 }
 
 int usb_ept_queue_xfer(struct usb_endpoint *ept, struct usb_request *_req)
@@ -1665,18 +1571,8 @@ static irqreturn_t usb_interrupt(int irq, void *data)
 				ui->speed = USB_SPEED_UNKNOWN;
 				break;
 			}
-
-#ifdef SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG
-			if (ui->chg_type == USB_CHG_TYPE__INVALID) {
-				ui->chg_type = USB_CHG_TYPE__SDP;
-			} else if (ui->chg_type == CHG_MIGHT_BE_HOST_PC) {
-				ui->chg_type = USB_CHG_TYPE__SDP;
-				schedule_delayed_work(&ui->chg_type_work, 0);
-			} else if (ui->chg_type == USB_CHG_TYPE__WALLCHARGER) {
-				schedule_delayed_work(&ui->chg_type_work, 0);
-			}
-#endif /* SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG */
 		}
+
 		/* pci interrutpt would also be generated when resuming
 		 * from bus suspend, following check would avoid kick
 		 * starting usb main thread in case of pci interrupts
@@ -1799,9 +1695,6 @@ static void usb_prepare(struct usb_info *ui)
 	INIT_WORK(&ui->li.wakeup_phy, usb_lpm_wakeup_phy);
 	INIT_DELAYED_WORK(&ui->work, usb_do_work);
 	INIT_DELAYED_WORK(&ui->chg_legacy_det, usb_chg_legacy_detect);
-#ifdef SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG
-	INIT_DELAYED_WORK(&ui->chg_type_work, usb_check_chg_type_work);
-#endif /* SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG */
 }
 
 static int usb_is_online(struct usb_info *ui)
@@ -2554,9 +2447,7 @@ static void usb_do_work(struct work_struct *w)
 				unsigned long f;
 
 				cancel_delayed_work_sync(&ui->chg_legacy_det);
-#ifdef SEMC_CONFIG_SUPPORT_3RD_PARTY_CHG
-				cancel_delayed_work_sync(&ui->chg_type_work);
-#endif
+
 				spin_lock_irqsave(&ui->lock, f);
 				temp = ui->chg_type;
 				ui->chg_type = USB_CHG_TYPE__INVALID;

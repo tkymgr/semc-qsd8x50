@@ -878,15 +878,6 @@ config MSM_SMD_PKT
 
 	  If in doubt, say yes.
 
-config MSM_SMD_CTL
-	bool "SMD Control Driver"
-	depends on MSM_SMD
-	default y
-	help
-	  Provides a binary SMD non-muxed control port interface.
-
-	  If in doubt, say yes.
-
 config MSM_SDIO_CTL
 	bool "SDIO CTL Driver"
 	depends on MSM_SDIO_AL

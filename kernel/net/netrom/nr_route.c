@@ -630,23 +630,23 @@ out:
 	return dev;
 }
 
-static ax25_digi *nr_call_to_digi(int ndigis, ax25_address *digipeaters)
+static ax25_digi *nr_call_to_digi(ax25_digi *digi, int ndigis,
+	ax25_address *digipeaters)
 {
-	static ax25_digi ax25_digi;
 	int i;
 
 	if (ndigis == 0)
 		return NULL;
 
 	for (i = 0; i < ndigis; i++) {
-		ax25_digi.calls[i]    = digipeaters[i];
-		ax25_digi.repeated[i] = 0;
+		digi->calls[i]    = digipeaters[i];
+		digi->repeated[i] = 0;
 	}
 
-	ax25_digi.ndigi      = ndigis;
-	ax25_digi.lastrepeat = -1;
+	digi->ndigi      = ndigis;
+	digi->lastrepeat = -1;
 
-	return &ax25_digi;
+	return digi;
 }
 
 /*
@@ -656,6 +656,7 @@ int nr_rt_ioctl(unsigned int cmd, void __user *arg)
 {
 	struct nr_route_struct nr_route;
 	struct net_device *dev;
+	ax25_digi digi;
 	int ret;
 
 	switch (cmd) {
@@ -673,13 +674,15 @@ int nr_rt_ioctl(unsigned int cmd, void __user *arg)
 			ret = nr_add_node(&nr_route.callsign,
 				nr_route.mnemonic,
 				&nr_route.neighbour,
-				nr_call_to_digi(nr_route.ndigis, nr_route.digipeaters),
+				nr_call_to_digi(&digi, nr_route.ndigis,
+						nr_route.digipeaters),
 				dev, nr_route.quality,
 				nr_route.obs_count);
 			break;
 		case NETROM_NEIGH:
 			ret = nr_add_neigh(&nr_route.callsign,
-				nr_call_to_digi(nr_route.ndigis, nr_route.digipeaters),
+				nr_call_to_digi(&digi, nr_route.ndigis,
+						nr_route.digipeaters),
 				dev, nr_route.quality);
 			break;
 		default:
@@ -839,12 +842,13 @@ int nr_route_frame(struct sk_buff *skb, ax25_cb *ax25)
 	dptr  = skb_push(skb, 1);
 	*dptr = AX25_P_NETROM;
 
-	ax25s = ax25_send_frame(skb, 256, (ax25_address *)dev->dev_addr, &nr_neigh->callsign, nr_neigh->digipeat, nr_neigh->dev);
-	if (nr_neigh->ax25 && ax25s) {
-		/* We were already holding this ax25_cb */
+	ax25s = nr_neigh->ax25;
+	nr_neigh->ax25 = ax25_send_frame(skb, 256,
+					 (ax25_address *)dev->dev_addr,
+					 &nr_neigh->callsign,
+					 nr_neigh->digipeat, nr_neigh->dev);
+	if (ax25s)
 		ax25_cb_put(ax25s);
-	}
-	nr_neigh->ax25 = ax25s;
 
 	dev_put(dev);
 	ret = (nr_neigh->ax25 != NULL);

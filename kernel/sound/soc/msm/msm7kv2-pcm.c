@@ -17,7 +17,6 @@
  */
 
 
-#include <mach/debug_audio_mm.h>
 #include <linux/init.h>
 #include <linux/err.h>
 #include <linux/module.h>
@@ -37,6 +36,7 @@
 
 #include "msm7kv2-pcm.h"
 #include <mach/qdsp5v2/audio_dev_ctl.h>
+#include <mach/debug_mm.h>
 
 #define HOSTPCM_STREAM_ID 5
 
@@ -56,7 +56,7 @@ static struct snd_pcm_hardware msm_pcm_playback_hardware = {
 	.rate_min =             USE_RATE_MIN,
 	.rate_max =             48000,
 	.channels_min =         1,
-	.channels_max =         1,
+	.channels_max =         2,
 	.buffer_bytes_max =     MAX_BUFFER_PLAYBACK_SIZE,
 	.period_bytes_min =     BUFSZ,
 	.period_bytes_max =     BUFSZ,
@@ -72,9 +72,9 @@ static struct snd_pcm_hardware msm_pcm_capture_hardware = {
 	.rate_min =             8000,
 	.rate_max =             48000,
 	.channels_min =         1,
-	.channels_max =         1,
+	.channels_max =         2,
 	.buffer_bytes_max =     MAX_BUFFER_CAPTURE_SIZE,
-	.period_bytes_min =    	4096,
+	.period_bytes_min =	4096,
 	.period_bytes_max =     4096,
 	.periods_min =          4,
 	.periods_max =          4,
@@ -91,13 +91,71 @@ static struct snd_pcm_hw_constraint_list constraints_sample_rates = {
 	.list = supported_sample_rates,
 	.mask = 0,
 };
-static void pcm_in_listener(u32 evt_id, union auddev_evt_data *evt_payload,
+static void alsa_out_listener(u32 evt_id, union auddev_evt_data *evt_payload,
 							void *private_data)
 {
 	struct msm_audio *prtd = (struct msm_audio *) private_data;
-
 	MM_DBG("evt_id = 0x%8x\n", evt_id);
 	switch (evt_id) {
+	case AUDDEV_EVT_DEV_RDY:
+		MM_DBG("AUDDEV_EVT_DEV_RDY\n");
+		prtd->source |= (0x1 << evt_payload->routing_id);
+		if (prtd->running == 1 && prtd->enabled == 1)
+			audpp_route_stream(prtd->session_id, prtd->source);
+		break;
+	case AUDDEV_EVT_DEV_RLS:
+		MM_DBG("AUDDEV_EVT_DEV_RLS\n");
+		prtd->source &= ~(0x1 << evt_payload->routing_id);
+		if (prtd->running == 1 && prtd->enabled == 1)
+			audpp_route_stream(prtd->session_id, prtd->source);
+		break;
+	case AUDDEV_EVT_STREAM_VOL_CHG:
+		prtd->vol_pan.volume = evt_payload->session_vol;
+		MM_DBG("AUDDEV_EVT_STREAM_VOL_CHG, stream vol %d\n",
+				prtd->vol_pan.volume);
+		if (prtd->running)
+			audpp_set_volume_and_pan(prtd->session_id,
+					prtd->vol_pan.volume,
+					0, POPP);
+		break;
+	default:
+		MM_DBG("Unknown Event\n");
+		break;
+	}
+}
+
+static void alsa_in_listener(u32 evt_id, union auddev_evt_data *evt_payload,
+							void *private_data)
+{
+	struct msm_audio *prtd = (struct msm_audio *) private_data;
+	MM_DBG("evt_id = 0x%8x\n", evt_id);
+
+	switch (evt_id) {
+	case AUDDEV_EVT_DEV_RDY: {
+		MM_DBG("AUDDEV_EVT_DEV_RDY\n");
+		prtd->source |= (0x1 << evt_payload->routing_id);
+
+		if ((prtd->running == 1) && (prtd->enabled == 1))
+			alsa_in_record_config(prtd, 1);
+
+		break;
+	}
+	case AUDDEV_EVT_DEV_RLS: {
+		MM_DBG("AUDDEV_EVT_DEV_RLS\n");
+		prtd->source &= ~(0x1 << evt_payload->routing_id);
+
+		if (!prtd->running || !prtd->enabled)
+			break;
+
+		/* Turn off as per source */
+		if (prtd->source)
+			alsa_in_record_config(prtd, 1);
+		else
+			/* Turn off all */
+			alsa_in_record_config(prtd, 0);
+
+		break;
+	}
 	case AUDDEV_EVT_FREQ_CHG: {
 		MM_DBG("Encoder Driver got sample rate change event\n");
 		MM_DBG("sample rate %d\n", evt_payload->freq_info.sample_rate);
@@ -207,7 +265,6 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 
 	/* rate and channels are sent to audio driver */
 	prtd->type = ENC_TYPE_WAV;
-	prtd->source = INTERNAL_CODEC_TX_SOURCE_MIX_MASK;
 	prtd->samp_rate = runtime->rate;
 	prtd->channel_mode = (runtime->channels - 1);
 	prtd->buffer_size = prtd->channel_mode ? STEREO_DATA_SIZE : \
@@ -217,30 +274,6 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 		return 0;
 
 	freq = prtd->samp_rate;
-
-	ret = msm_snddev_request_freq(&freq, prtd->session_id,
-					SNDDEV_CAP_TX, AUDDEV_CLNT_ENC);
-	MM_DBG("sample rate configured %d sample rate requested %d\n",
-			freq, prtd->samp_rate);
-
-	if (ret < 0) {
-		MM_DBG("sample rate can not be set, return code %d\n", ret);
-		msm_snddev_withdraw_freq(prtd->session_id,
-					SNDDEV_CAP_TX, AUDDEV_CLNT_ENC);
-		MM_DBG("msm_snddev_withdraw_freq\n");
-		return ret;
-	}
-
-	/* Configured sample rate is not as requested,
-		reject the request */
-	if (freq != prtd->samp_rate) {
-		MM_DBG("sample rate can not be configured to %d\n",
-							prtd->samp_rate);
-		msm_snddev_withdraw_freq(prtd->session_id,
-					SNDDEV_CAP_TX, AUDDEV_CLNT_ENC);
-		MM_DBG("msm_snddev_withdraw_freq\n");
-		return ret;
-	}
 
 	prtd->data = prtd->substream->dma_buffer.area;
 	prtd->phys = prtd->substream->dma_buffer.addr;
@@ -278,7 +311,7 @@ static int msm_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	case SNDRV_PCM_TRIGGER_RESUME:
 	case SNDRV_PCM_TRIGGER_PAUSE_RELEASE:
 		if ((substream->stream == SNDRV_PCM_STREAM_CAPTURE)
-			|| prtd->mmap_flag)
+			|| !prtd->mmap_flag)
 			break;
 		if (!prtd->out_needed) {
 			prtd->stopped = 0;
@@ -310,7 +343,8 @@ static int msm_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	case SNDRV_PCM_TRIGGER_STOP:
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_PAUSE_PUSH:
-		if (substream->stream == SNDRV_PCM_STREAM_CAPTURE)
+		if ((substream->stream == SNDRV_PCM_STREAM_CAPTURE)
+			|| !prtd->mmap_flag)
 			break;
 		prtd->stopped = 1;
 		break;
@@ -342,10 +376,23 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 		return ret;
 	}
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
+		if (prtd->opened)
+			return -EBUSY;
 		runtime->hw = msm_pcm_playback_hardware;
 		prtd->dir = SNDRV_PCM_STREAM_PLAYBACK;
 		prtd->eos_ack = 0;
 		prtd->session_id = HOSTPCM_STREAM_ID;
+		prtd->device_events = AUDDEV_EVT_DEV_RDY |
+				AUDDEV_EVT_DEV_RLS;
+		prtd->source = msm_snddev_route_dec(prtd->session_id);
+		MM_ERR("Register device event listener\n");
+		ret = auddev_register_evt_listner(prtd->device_events,
+				AUDDEV_CLNT_DEC, prtd->session_id,
+				alsa_out_listener, (void *) prtd);
+		if (ret) {
+			MM_ERR("failed to register device event listener\n");
+			goto evt_error;
+		}
 	} else if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 		runtime->hw = msm_pcm_capture_hardware;
 		prtd->dir = SNDRV_PCM_STREAM_CAPTURE;
@@ -353,7 +400,7 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 		sessionid = audpreproc_aenc_alloc(session_attrb,
 				&prtd->module_name, &prtd->queue_id);
 		if (sessionid < 0) {
-			MM_ERR("No free decoder available\n");
+			MM_ERR("AUDREC not available\n");
 			kfree(prtd);
 			return -ENODEV;
 		}
@@ -368,17 +415,19 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 		}
 
 		prtd->abort = 0;
-		prtd->device_events = AUDDEV_EVT_FREQ_CHG;
+		prtd->device_events = AUDDEV_EVT_DEV_RDY | AUDDEV_EVT_DEV_RLS |
+				AUDDEV_EVT_FREQ_CHG;
+		prtd->source = msm_snddev_route_enc(prtd->session_id);
 		MM_ERR("Register device event listener\n");
 		ret = auddev_register_evt_listner(prtd->device_events,
 				AUDDEV_CLNT_ENC, prtd->session_id,
-				pcm_in_listener, (void *) prtd);
-
+				alsa_in_listener, (void *) prtd);
 		if (ret) {
 			MM_ERR("failed to register device event listener\n");
+			audpreproc_aenc_free(prtd->session_id);
+			msm_adsp_put(prtd->audrec);
 			goto evt_error;
 		}
-
 	}
 	prtd->substream = substream;
 	ret = snd_pcm_hw_constraint_list(runtime, 0,
@@ -408,13 +457,12 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	}
 	prtd->vol_pan.volume = 0x2000;
 	prtd->vol_pan.pan = 0x0;
+	prtd->opened = 1;
 	runtime->private_data = prtd;
 
 	copy_count = 0;
 	return 0;
 evt_error:
-	audpreproc_aenc_free(prtd->session_id);
-	msm_adsp_put(prtd->audrec);
 	kfree(prtd);
 	return ret;
 }
@@ -428,8 +476,8 @@ static int msm_pcm_playback_copy(struct snd_pcm_substream *substream, int a,
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct msm_audio *prtd = runtime->private_data;
 
-	MM_DBG("%d\n", fbytes);
 	fbytes = frames_to_bytes(runtime, frames);
+	MM_DBG("%d\n", fbytes);
 	ret = alsa_send_buffer(prtd, buf, fbytes, NULL);
 	++copy_count;
 	prtd->pcm_buf_pos += fbytes;
@@ -467,8 +515,9 @@ static int msm_pcm_playback_close(struct snd_pcm_substream *substream)
 
 done:
 	alsa_audio_disable(prtd);
-	audpp_adec_free(prtd->session_id);
+	auddev_unregister_evt_listner(AUDDEV_CLNT_DEC, prtd->session_id);
 	kfree(prtd);
+	prtd->opened = 0;
 
 	return 0;
 }
@@ -485,8 +534,11 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 	int monofbytes = 0;
 	char *bufferp = NULL;
 
-	MM_DBG("%d\n", fbytes);
+	if (prtd->abort)
+		return -EPERM;
+
 	fbytes = frames_to_bytes(runtime, frames);
+	MM_DBG("%d\n", fbytes);
 	monofbytes = fbytes / 2;
 	if (runtime->channels == 2) {
 		ret = alsa_buffer_read(prtd, buf, fbytes, NULL);
@@ -520,6 +572,7 @@ static int msm_pcm_capture_close(struct snd_pcm_substream *substream)
 	audpreproc_aenc_free(prtd->session_id);
 	msm_adsp_put(prtd->audrec);
 	kfree(prtd);
+	prtd->opened = 0;
 	return 0;
 }
 
@@ -562,7 +615,7 @@ static snd_pcm_uframes_t msm_pcm_pointer(struct snd_pcm_substream *substream)
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct msm_audio *prtd = runtime->private_data;
 
-	MM_DBG("\n");
+	MM_DBG("pcm_irq_pos = %d\n", prtd->pcm_irq_pos);
 	if (prtd->pcm_irq_pos == prtd->pcm_size)
 		prtd->pcm_irq_pos = 0;
 	return bytes_to_frames(runtime, (prtd->pcm_irq_pos));
@@ -609,7 +662,7 @@ static int msm_pcm_remove(struct platform_device *devptr)
 {
 	struct snd_soc_device *socdev = platform_get_drvdata(devptr);
 	snd_soc_free_pcms(socdev);
-	kfree(socdev->codec);
+	kfree(socdev->card->codec);
 	platform_set_drvdata(devptr, NULL);
 	return 0;
 }
@@ -663,29 +716,35 @@ static int msm_pcm_new(struct snd_card *card,
 			struct snd_pcm *pcm)
 {
 	int ret = 0;
+
+
+	ret = snd_pcm_new_stream(pcm, SNDRV_PCM_STREAM_PLAYBACK, 1);
+	if (ret)
+		return ret;
+	ret = snd_pcm_new_stream(pcm, SNDRV_PCM_STREAM_CAPTURE, 1);
+	if (ret)
+		return ret;
+	snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_PLAYBACK, &msm_pcm_ops);
+	snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_CAPTURE, &msm_pcm_ops);
+
 	if (!card->dev->coherent_dma_mask)
-		card->dev->coherent_dma_mask = DMA_32BIT_MASK;
+		card->dev->coherent_dma_mask = DMA_BIT_MASK(32);
 
-	if (codec_dai->playback.channels_min) {
-		ret = pcm_preallocate_buffer(pcm,
+	ret = pcm_preallocate_buffer(pcm,
 			SNDRV_PCM_STREAM_PLAYBACK);
-		if (ret)
-			return ret;
-	}
-	if (codec_dai->playback.channels_min) {
-		ret = pcm_preallocate_buffer(pcm,
+	if (ret)
+		return ret;
+	ret = pcm_preallocate_buffer(pcm,
 			SNDRV_PCM_STREAM_CAPTURE);
-		if (ret)
-			msm_pcm_free_buffers(pcm);
-	}
-
+	if (ret)
+		msm_pcm_free_buffers(pcm);
 	return ret;
 }
 
 struct snd_soc_platform msm_soc_platform = {
 	.name		= "msm-audio",
 	.remove         = msm_pcm_remove,
-	.pcm_ops 	= &msm_pcm_ops,
+	.pcm_ops	= &msm_pcm_ops,
 	.pcm_new	= msm_pcm_new,
 	.pcm_free	= msm_pcm_free_buffers,
 };

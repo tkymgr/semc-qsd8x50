@@ -487,11 +487,15 @@ static struct snd_pcm_ops msm_pcm_ops = {
 
 static int msm_pcm_remove(struct platform_device *devptr)
 {
+#if 0
 	struct snd_soc_device *socdev = platform_get_drvdata(devptr);
 	snd_soc_free_pcms(socdev);
 	kfree(socdev->codec);
 	platform_set_drvdata(devptr, NULL);
 	return 0;
+#endif
+	printk("DISABLED %s\n", __func__);
+	return -1;
 }
 
 static int pcm_preallocate_dma_buffer(struct snd_pcm *pcm,
@@ -544,7 +548,7 @@ static int msm_pcm_new(struct snd_card *card,
 {
 	int ret;
 	if (!card->dev->coherent_dma_mask)
-		card->dev->coherent_dma_mask = DMA_32BIT_MASK;
+		card->dev->coherent_dma_mask = DMA_BIT_MASK(32);
 
 	ret = snd_pcm_new_stream(pcm, SNDRV_PCM_STREAM_PLAYBACK, 1);
 	if (ret)

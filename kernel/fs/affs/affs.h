@@ -106,8 +106,8 @@ struct affs_sb_info {
 	u32 s_last_bmap;
 	struct buffer_head *s_bmap_bh;
 	char *s_prefix;			/* Prefix for volumes and assigns. */
-	int s_prefix_len;		/* Length of prefix. */
 	char s_volume[32];		/* Volume prefix for absolute symlinks. */
+	spinlock_t symlink_lock;	/* protects the previous two */
 };
 
 #define SF_INTL		0x0001		/* International filesystem. */
@@ -182,6 +182,7 @@ extern int			 affs_add_entry(struct inode *dir, struct inode *inode, struct dent
 
 void		affs_free_prealloc(struct inode *inode);
 extern void	affs_truncate(struct inode *);
+int		affs_file_fsync(struct file *, struct dentry *, int);
 
 /* dir.c */
 
@@ -199,8 +200,7 @@ extern const struct address_space_operations	 affs_symlink_aops;
 extern const struct address_space_operations	 affs_aops;
 extern const struct address_space_operations	 affs_aops_ofs;
 
-extern struct dentry_operations	 affs_dentry_operations;
-extern struct dentry_operations	 affs_dentry_operations_intl;
+extern const struct dentry_operations	 affs_dentry_operations;
 
 static inline void
 affs_set_blocksize(struct super_block *sb, int size)

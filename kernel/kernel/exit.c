@@ -571,20 +571,6 @@ void put_fs_struct(struct fs_struct *fs)
 	}
 }
 
-void exit_fs(struct task_struct *tsk)
-{
-	struct fs_struct * fs = tsk->fs;
-
-	if (fs) {
-		task_lock(tsk);
-		tsk->fs = NULL;
-		task_unlock(tsk);
-		put_fs_struct(fs);
-	}
-}
-
-EXPORT_SYMBOL_GPL(exit_fs);
-
 #ifdef CONFIG_MM_OWNER
 /*
  * Task p is exiting and it owned mm, lets find a new owner for it

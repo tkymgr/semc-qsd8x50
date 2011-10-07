@@ -34,14 +34,11 @@ static struct {
 	 * an ongoing cpu hotplug operation.
 	 */
 	int refcount;
-} cpu_hotplug;
-
-void __init cpu_hotplug_init(void)
-{
-	cpu_hotplug.active_writer = NULL;
-	mutex_init(&cpu_hotplug.lock);
-	cpu_hotplug.refcount = 0;
-}
+} cpu_hotplug = {
+	.active_writer = NULL,
+	.lock = __MUTEX_INITIALIZER(cpu_hotplug.lock),
+	.refcount = 0,
+};
 
 #ifdef CONFIG_HOTPLUG_CPU
 
@@ -215,6 +212,8 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen)
 	err = __raw_notifier_call_chain(&cpu_chain, CPU_DOWN_PREPARE | mod,
 					hcpu, -1, &nr_calls);
 	if (err == NOTIFY_BAD) {
+		set_cpu_active(cpu, true);
+
 		nr_calls--;
 		__raw_notifier_call_chain(&cpu_chain, CPU_DOWN_FAILED | mod,
 					  hcpu, nr_calls, NULL);
@@ -226,11 +225,11 @@ static int __ref _cpu_down(unsigned int cpu, int tasks_frozen)
 
 	/* Ensure that we are not runnable on dying cpu */
 	cpumask_copy(old_allowed, &current->cpus_allowed);
-	set_cpus_allowed_ptr(current,
-			     cpumask_of(cpumask_any_but(cpu_online_mask, cpu)));
+	set_cpus_allowed_ptr(current, cpu_active_mask);
 
 	err = __stop_machine(take_cpu_down, &tcd_param, cpumask_of(cpu));
 	if (err) {
+		set_cpu_active(cpu, true);
 		/* CPU didn't die: tell everyone.  Can't complain. */
 		if (raw_notifier_call_chain(&cpu_chain, CPU_DOWN_FAILED | mod,
 					    hcpu) == NOTIFY_BAD)
@@ -281,7 +280,7 @@ int __ref cpu_down(unsigned int cpu)
 		goto out;
 	}
 
-	cpu_clear(cpu, cpu_active_map);
+	set_cpu_active(cpu, false);
 
 	/*
 	 * Make sure the all cpus did the reschedule and are not
@@ -294,9 +293,6 @@ int __ref cpu_down(unsigned int cpu)
 	synchronize_sched();
 
 	err = _cpu_down(cpu, 0);
-
-	if (cpu_online(cpu))
-		cpu_set(cpu, cpu_active_map);
 
 out:
 	cpu_maps_update_done();
@@ -333,7 +329,7 @@ static int __cpuinit _cpu_up(unsigned int cpu, int tasks_frozen)
 		goto out_notify;
 	BUG_ON(!cpu_online(cpu));
 
-	cpu_set(cpu, cpu_active_map);
+	set_cpu_active(cpu, true);
 
 	/* Now call notifier in preparation. */
 	raw_notifier_call_chain(&cpu_chain, CPU_ONLINE | mod, hcpu);
@@ -390,20 +386,29 @@ int disable_nonboot_cpus(void)
 	 * with the userspace trying to use the CPU hotplug at the same time
 	 */
 	cpumask_clear(frozen_cpus);
+
+	for_each_online_cpu(cpu) {
+		if (cpu == first_cpu)
+			continue;
+		set_cpu_active(cpu, false);
+	}
+
+	synchronize_sched();
+
 	printk("Disabling non-boot CPUs ...\n");
 	for_each_online_cpu(cpu) {
 		if (cpu == first_cpu)
 			continue;
 		error = _cpu_down(cpu, 1);
-		if (!error) {
+		if (!error)
 			cpumask_set_cpu(cpu, frozen_cpus);
-			printk("CPU%d is down\n", cpu);
-		} else {
+		else {
 			printk(KERN_ERR "Error taking CPU%d down: %d\n",
 				cpu, error);
 			break;
 		}
 	}
+
 	if (!error) {
 		BUG_ON(num_online_cpus() > 1);
 		/* Make sure the CPUs won't be enabled by someone else */
@@ -414,6 +419,14 @@ int disable_nonboot_cpus(void)
 	cpu_maps_update_done();
 	stop_machine_destroy();
 	return error;
+}
+
+void __weak arch_enable_nonboot_cpus_begin(void)
+{
+}
+
+void __weak arch_enable_nonboot_cpus_end(void)
+{
 }
 
 void __ref enable_nonboot_cpus(void)
@@ -427,6 +440,9 @@ void __ref enable_nonboot_cpus(void)
 		goto out;
 
 	printk("Enabling non-boot CPUs ...\n");
+
+	arch_enable_nonboot_cpus_begin();
+
 	for_each_cpu(cpu, frozen_cpus) {
 		error = _cpu_up(cpu, 1);
 		if (!error) {
@@ -435,6 +451,9 @@ void __ref enable_nonboot_cpus(void)
 		}
 		printk(KERN_WARNING "Error taking CPU%d up: %d\n", cpu, error);
 	}
+
+	arch_enable_nonboot_cpus_end();
+
 	cpumask_clear(frozen_cpus);
 out:
 	cpu_maps_update_done();
