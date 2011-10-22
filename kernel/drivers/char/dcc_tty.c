@@ -1,7 +1,6 @@
 /* drivers/char/dcc_tty.c
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2008-2009, Code Aurora Forum. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,26 +17,30 @@
 #include <linux/platform_device.h>
 #include <linux/delay.h>
 #include <linux/console.h>
-#include <linux/hrtimer.h>
 #include <linux/tty.h>
 #include <linux/tty_driver.h>
 #include <linux/tty_flip.h>
+#include <linux/workqueue.h>
+#include <linux/jiffies.h>
 
 MODULE_DESCRIPTION("DCC TTY Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
 
-#define DELAY_USECS 5000
-
 static spinlock_t g_dcc_tty_lock = SPIN_LOCK_UNLOCKED;
-static struct hrtimer g_dcc_timer;
-static char g_dcc_buffer[16];
+static char g_dcc_buffer[4096];
 static int g_dcc_buffer_head;
 static int g_dcc_buffer_count;
 static unsigned g_dcc_write_delay_usecs = 1;
 static struct tty_driver *g_dcc_tty_driver;
 static struct tty_struct *g_dcc_tty;
 static int g_dcc_tty_open_count;
+static int dcc_chars_in_buffer;
+
+static void dcc_poll_locked_work_fn(struct work_struct *work);
+static DECLARE_WORK(dcc_poll_locked_work, dcc_poll_locked_work_fn);
+static DECLARE_DELAYED_WORK(dcc_poll_locked_delayed_work,
+					dcc_poll_locked_work_fn);
 
 static void dcc_poll_locked(void)
 {
@@ -48,11 +51,10 @@ static void dcc_poll_locked(void)
 	while (g_dcc_buffer_count) {
 		ch = g_dcc_buffer[g_dcc_buffer_head];
 		asm(
-			"mrc 14, 0, %0, c0, c1, 0\n"
-			"tst %0, #(1 << 29)\n"
-			"mcreq 14, 0, %1, c0, c5, 0\n"
-			"moveq %0, #1\n"
-			"movne %0, #0\n"
+			"mrc 14, 0, r15, c0, c1, 0\n"
+			"mcrcc 14, 0, %1, c0, c5, 0\n"
+			"movcc %0, #1\n"
+			"movcs %0, #0\n"
 			: "=r" (written)
 			: "r" (ch)
 		);
@@ -67,12 +69,8 @@ static void dcc_poll_locked(void)
 			}
 			g_dcc_write_delay_usecs = 1;
 		} else {
-			if (g_dcc_write_delay_usecs > DELAY_USECS) {
-				/* Not responding, drop the data */
-				g_dcc_buffer_head = (g_dcc_buffer_head + g_dcc_buffer_count) % ARRAY_SIZE(g_dcc_buffer);
-				g_dcc_buffer_count = 0;
+			if (g_dcc_write_delay_usecs > 0x100)
 				break;
-			}
 			g_dcc_write_delay_usecs <<= 1;
 			udelay(g_dcc_write_delay_usecs);
 		}
@@ -93,9 +91,27 @@ static void dcc_poll_locked(void)
 		}
 	}
 
-
 	if (g_dcc_buffer_count)
-		hrtimer_start(&g_dcc_timer, ktime_set(0, g_dcc_write_delay_usecs * NSEC_PER_USEC), HRTIMER_MODE_REL);
+		schedule_delayed_work_on(0, &dcc_poll_locked_delayed_work,
+				usecs_to_jiffies(g_dcc_write_delay_usecs));
+	else
+		schedule_delayed_work_on(0, &dcc_poll_locked_delayed_work,
+					msecs_to_jiffies(20));
+}
+
+static void dcc_poll_locked_work_fn(struct work_struct *work)
+{
+	unsigned long irq_flags;
+
+	spin_lock_irqsave(&g_dcc_tty_lock, irq_flags);
+	dcc_poll_locked();
+	asm(
+		"mrc 14, 0, %0, c0, c1, 0\n"
+		"mov %0, %0, LSR #30\n"
+		"and %0, %0, #1\n"
+		: "=r" (dcc_chars_in_buffer)
+	);
+	spin_unlock_irqrestore(&g_dcc_tty_lock, irq_flags);
 }
 
 static int dcc_tty_open(struct tty_struct * tty, struct file * filp)
@@ -112,16 +128,14 @@ static int dcc_tty_open(struct tty_struct * tty, struct file * filp)
 		ret = -EBUSY;
 	spin_unlock_irqrestore(&g_dcc_tty_lock, irq_flags);
 
-	printk(KERN_DEBUG "dcc_tty_open, tty %p, f_flags %x, returned %d\n",
-						tty, filp->f_flags, ret);
+	printk("dcc_tty_open, tty %p, f_flags %x, returned %d\n", tty, filp->f_flags, ret);
 
 	return ret;
 }
 
 static void dcc_tty_close(struct tty_struct * tty, struct file * filp)
 {
-	printk(KERN_DEBUG "dcc_tty_close, tty %p, f_flags %x\n",
-						tty, filp->f_flags);
+	printk("dcc_tty_close, tty %p, f_flags %x\n", tty, filp->f_flags);
 	if (g_dcc_tty == tty) {
 		if (--g_dcc_tty_open_count == 0)
 			g_dcc_tty = NULL;
@@ -163,10 +177,13 @@ static int dcc_write(const unsigned char *buf_start, int count)
 			count -= copy_len;
 			g_dcc_buffer_count += copy_len;
 		}
-		dcc_poll_locked();
+
+		schedule_work_on(0, &dcc_poll_locked_work);
 		space_left = ARRAY_SIZE(g_dcc_buffer) - g_dcc_buffer_count;
+
 	} while(count && space_left);
 	spin_unlock_irqrestore(&g_dcc_tty_lock, irq_flags);
+
 	return buf - buf_start;
 }
 
@@ -176,8 +193,7 @@ static int dcc_tty_write(struct tty_struct * tty, const unsigned char *buf, int 
 	/* printk("dcc_tty_write %p, %d\n", buf, count); */
 	ret = dcc_write(buf, count);
 	if (ret != count)
-		printk(KERN_DEBUG "dcc_tty_write %p, %d, returned %d\n",
-							buf, count, ret);
+		printk("dcc_tty_write %p, %d, returned %d\n", buf, count, ret);
 	return ret;
 }
 
@@ -194,33 +210,12 @@ static int dcc_tty_write_room(struct tty_struct *tty)
 
 static int dcc_tty_chars_in_buffer(struct tty_struct *tty)
 {
-	int ret;
-	asm(
-		"mrc 14, 0, %0, c0, c1, 0\n"
-		"mov %0, %0, LSR #30\n"
-		"and %0, %0, #1\n"
-		: "=r" (ret)
-	);
-	return ret;
+	return dcc_chars_in_buffer;
 }
 
 static void dcc_tty_unthrottle(struct tty_struct * tty)
 {
-	unsigned long irq_flags;
-
-	spin_lock_irqsave(&g_dcc_tty_lock, irq_flags);
-	dcc_poll_locked();
-	spin_unlock_irqrestore(&g_dcc_tty_lock, irq_flags);
-}
-
-static enum hrtimer_restart dcc_tty_timer_func(struct hrtimer *timer)
-{
-	unsigned long irq_flags;
-
-	spin_lock_irqsave(&g_dcc_tty_lock, irq_flags);
-	dcc_poll_locked();
-	spin_unlock_irqrestore(&g_dcc_tty_lock, irq_flags);
-	return HRTIMER_NORESTART;
+	schedule_work_on(0, &dcc_poll_locked_work);
 }
 
 void dcc_console_write(struct console *co, const char *b, unsigned count)
@@ -273,52 +268,9 @@ static struct tty_operations dcc_tty_ops = {
 	.unthrottle = dcc_tty_unthrottle,
 };
 
-static int __init dcc_tty_probe(void)
-{
-	char ch;
-	int wDTRfull, delay_usecs = DELAY_USECS;
-
-	/* Write '\n' first.  Should be ok because wDTR is empty after reset */
-	ch = '\n';
-	asm __volatile (
-		"mrc 14, 0, %0, c0, c1, 0\n"
-		"tst %0, #(1 << 29)\n"
-		"mcreq 14, 0, %1, c0, c5, 0\n"
-		"moveq %0, #0\n"
-		"movne %0, #1\n"
-		: "=r" (wDTRfull)
-		: "r" (ch)
-	);
-
-	/* Now check if previous written char is pulled out */
-	do {
-		asm __volatile (
-			"mrc 14, 0, %0, c0, c1, 0\n"
-			"tst %0, #(1 << 29)\n"
-			"moveq %0, #0\n"
-			"movne %0, #1\n"
-			: "=r" (wDTRfull)
-		);
-		udelay(10);
-		delay_usecs -= 10;
-	} while (wDTRfull && delay_usecs > 0);
-
-	return wDTRfull;
-}
-
 static int __init dcc_tty_init(void)
 {
 	int ret;
-
-	hrtimer_init(&g_dcc_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	g_dcc_timer.function = dcc_tty_timer_func;
-
-	ret = dcc_tty_probe();
-	if (ret) {
-		printk(KERN_ERR "dcc_tty_probe: probing to DCC failed\n");
-		ret = -ENOENT;
-		goto err_alloc_tty_driver_failed;
-	}
 
 	g_dcc_tty_driver = alloc_tty_driver(1);
 	if (!g_dcc_tty_driver) {
@@ -344,7 +296,8 @@ static int __init dcc_tty_init(void)
 	tty_register_device(g_dcc_tty_driver, 0, NULL);
 
 	register_console(&dcc_console);
-	hrtimer_start(&g_dcc_timer, ktime_set(0, 0), HRTIMER_MODE_REL);
+
+	schedule_work_on(0, &dcc_poll_locked_work);
 
 	return 0;
 

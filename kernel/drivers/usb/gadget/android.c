@@ -28,6 +28,8 @@
 #include <linux/kernel.h>
 #include <linux/utsname.h>
 #include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
+#include <linux/debugfs.h>
 
 #include <linux/usb/android_composite.h>
 #include <linux/usb/ch9.h>
@@ -52,11 +54,6 @@ MODULE_AUTHOR("Mike Lockwood");
 MODULE_DESCRIPTION("Android Composite USB Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0");
-
-/* engineering product id */
-static int android_set_pid(const char *val, struct kernel_param *kp);
-module_param_call(eng_pid, android_set_pid, NULL,
-					NULL, 0600);
 
 static const char longname[] = "Gadget Android";
 
@@ -120,6 +117,7 @@ static struct usb_otg_descriptor otg_descriptor = {
 	.bLength =		sizeof otg_descriptor,
 	.bDescriptorType =	USB_DT_OTG,
 	.bmAttributes =		USB_OTG_SRP | USB_OTG_HNP,
+	.bcdOTG               = __constant_cpu_to_le16(0x0200),
 };
 
 static const struct usb_descriptor_header *otg_desc[] = {
@@ -131,6 +129,16 @@ static struct list_head _functions = LIST_HEAD_INIT(_functions);
 static int _registered_function_count = 0;
 
 static void android_set_default_product(int product_id);
+
+void android_usb_set_connected(int connected)
+{
+	if (_android_dev && _android_dev->cdev && _android_dev->cdev->gadget) {
+		if (connected)
+			usb_gadget_connect(_android_dev->cdev->gadget);
+		else
+			usb_gadget_disconnect(_android_dev->cdev->gadget);
+	}
+}
 
 static struct android_usb_function *get_function(const char *name)
 {
@@ -186,12 +194,6 @@ static struct usb_configuration android_config_driver = {
 	.bind		= android_bind_config,
 	.setup		= android_setup_config,
 	.bConfigurationValue = 1,
-#ifdef CONFIG_USB_GADGET_REMOTE_WAKEUP
-	.bmAttributes	= (USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER |
-				USB_CONFIG_ATT_WAKEUP),
-#else
-	.bmAttributes	= USB_CONFIG_ATT_ONE,
-#endif
 	.bMaxPower	= 0xFA, /* 500ma */
 };
 
@@ -231,7 +233,7 @@ static int product_matches_functions(struct android_usb_product *p)
 {
 	struct usb_function		*f;
 	list_for_each_entry(f, &android_config_driver.functions, list) {
-		if (product_has_function(p, f) == !!f->disabled)
+		if (product_has_function(p, f) == !f->enabled)
 			return 0;
 	}
 	return 1;
@@ -402,7 +404,6 @@ static void android_set_default_product(int pid)
  * TODO : Search of function in product id can be extended for all index.
  * RNDIS function enable/disable uses this.
 */
-#ifdef CONFIG_USB_ANDROID_RNDIS
 static void android_config_functions(struct usb_function *f, int enable)
 {
 	struct android_dev *dev = _android_dev;
@@ -421,15 +422,13 @@ static void android_config_functions(struct usb_function *f, int enable)
 	} else
 		android_set_default_product(dev->product_id);
 }
-#endif
 
 void android_enable_function(struct usb_function *f, int enable)
 {
 	struct android_dev *dev = _android_dev;
-	int disable = !enable;
 	int product_id;
 
-	if (f->disabled != disable) {
+	if (f->enabled != enable) {
 		usb_function_set_enabled(f, enable);
 
 #ifdef CONFIG_USB_ANDROID_RNDIS
@@ -460,65 +459,90 @@ void android_enable_function(struct usb_function *f, int enable)
 		device_desc.idProduct = __constant_cpu_to_le16(product_id);
 		if (dev->cdev)
 			dev->cdev->desc.idProduct = device_desc.idProduct;
+
 		if (!strcmp(f->name, "rndis") && enable)
-			usb_composite_force_reset(dev->cdev,1);
+			usb_composite_force_reset(dev->cdev, 1);
 		else
-			usb_composite_force_reset(dev->cdev,0);
+			usb_composite_force_reset(dev->cdev, 0);
 	}
 }
 
-static int android_set_pid(const char *val, struct kernel_param *kp)
+#ifdef CONFIG_DEBUG_FS
+static int android_debugfs_open(struct inode *inode, struct file *file)
 {
-	int i;
-	int ret;
-	unsigned long tmp;
-	struct android_usb_product *p = NULL;
-	struct android_dev *dev = _android_dev;
-
-	/* We come here even before android_probe, when product id
-	 * is passed via kernel command line.
-	 */
-	if (!_android_dev) {
-		ret = -ENODEV;
-		goto out;
-	}
-
-	ret = strict_strtoul(val, 16, &tmp);
-	if (ret)
-		goto out;
-
-	for (i = 0; i < dev->num_products; i++) {
-		if (dev->products[i].product_id == tmp) {
-			p = &dev->products[i];
-			break;
-		}
-	}
-	if (p == NULL) {
-		ret = -EINVAL;
-		goto out;
-	}
-
-	android_set_default_product(p->product_id);
-	device_desc.idProduct = __constant_cpu_to_le16(p->product_id);
-
-	if (dev->cdev) {
-		dev->cdev->desc.idProduct = device_desc.idProduct;
-		usb_composite_force_reset(dev->cdev,1);
-	}
-out:
-	return ret;
+	file->private_data = inode->i_private;
+	return 0;
 }
 
+static ssize_t android_debugfs_serialno_write(struct file *file, const char
+				__user *buf,	size_t count, loff_t *ppos)
+{
+	char str_buf[MAX_STR_LEN];
+
+	if (count > MAX_STR_LEN)
+		return -EFAULT;
+
+	if (copy_from_user(str_buf, buf, count))
+		return -EFAULT;
+
+	memcpy(serial_number, str_buf, count);
+
+	if (serial_number[count - 1] == '\n')
+		serial_number[count - 1] = '\0';
+
+	strings_dev[STRING_SERIAL_IDX].s = serial_number;
+
+	return count;
+}
+const struct file_operations android_fops = {
+	.open	= android_debugfs_open,
+	.write	= android_debugfs_serialno_write,
+};
+
+struct dentry *android_debug_root;
+struct dentry *android_debug_serialno;
+
+static int android_debugfs_init(struct android_dev *dev)
+{
+	android_debug_root = debugfs_create_dir("android", NULL);
+	if (!android_debug_root)
+		return -ENOENT;
+
+	android_debug_serialno = debugfs_create_file("serial_number", 0222,
+						android_debug_root, dev,
+						&android_fops);
+	if (!android_debug_serialno) {
+		debugfs_remove(android_debug_root);
+		android_debug_root = NULL;
+		return -ENOENT;
+	}
+	return 0;
+}
+
+static void android_debugfs_cleanup(void)
+{
+       debugfs_remove(android_debug_serialno);
+       debugfs_remove(android_debug_root);
+}
+#endif
 static int __init android_probe(struct platform_device *pdev)
 {
 	struct android_usb_platform_data *pdata = pdev->dev.platform_data;
 	struct android_dev *dev = _android_dev;
+	int result;
 
 	printk(KERN_INFO "android_probe pdata: %p\n", pdata);
 
-	if (!pdata || !pdata->vendor_id || !pdata->product_name ||
-		!pdata->manufacturer_name)
-		return -ENODEV;
+	pm_runtime_set_active(&pdev->dev);
+	pm_runtime_enable(&pdev->dev);
+
+	result = pm_runtime_get(&pdev->dev);
+	if (result < 0) {
+		dev_err(&pdev->dev,
+			"Runtime PM: Unable to wake up the device, rc = %d\n",
+			result);
+		return result;
+	}
 
 	if (pdata) {
 		dev->products = pdata->products;
@@ -544,12 +568,33 @@ static int __init android_probe(struct platform_device *pdev)
 		if (pdata->serial_number)
 			strings_dev[STRING_SERIAL_IDX].s = pdata->serial_number;
 	}
-
+#ifdef CONFIG_DEBUG_FS
+	result = android_debugfs_init(dev);
+	if (result)
+		pr_info("%s: android_debugfs_init failed\n", __func__);
+#endif
 	return usb_composite_register(&android_usb_driver);
 }
 
+static int andr_runtime_suspend(struct device *dev)
+{
+	dev_dbg(dev, "pm_runtime: suspending...\n");
+	return 0;
+}
+
+static int andr_runtime_resume(struct device *dev)
+{
+	dev_dbg(dev, "pm_runtime: resuming...\n");
+	return 0;
+}
+
+static struct dev_pm_ops andr_dev_pm_ops = {
+	.runtime_suspend = andr_runtime_suspend,
+	.runtime_resume = andr_runtime_resume,
+};
+
 static struct platform_driver android_platform_driver = {
-	.driver = { .name = "android_usb", },
+	.driver = { .name = "android_usb", .pm = &andr_dev_pm_ops},
 	.probe = android_probe,
 };
 
@@ -572,6 +617,9 @@ module_init(init);
 
 static void __exit cleanup(void)
 {
+#ifdef CONFIG_DEBUG_FS
+	android_debugfs_cleanup();
+#endif
 	usb_composite_unregister(&android_usb_driver);
 	platform_driver_unregister(&android_platform_driver);
 	kfree(_android_dev);

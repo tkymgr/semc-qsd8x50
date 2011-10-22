@@ -42,9 +42,6 @@
 
 #define HS_RPC_PROG 0x30000091
 
-#define HS_RPC_VERS_1 0x00010001
-#define HS_RPC_VERS_2 0x00020001
-
 #define HS_SUBSCRIBE_SRVC_PROC 0x03
 #define HS_REPORT_EVNT_PROC    0x05
 #define HS_EVENT_CB_PROC	1
@@ -133,6 +130,13 @@ enum hs_cmd_class {
 	HS_CMD_CLASS_KPD,     /* Send KPD related commands              */
 	HS_CMD_CLASS_LAST,    /* Should always be the last class type   */
 	HS_CMD_CLASS_MAX
+};
+
+/* Add newer versions at the top of array */
+static const unsigned int rpc_vers[] = {
+	0x00030001,
+	0x00020001,
+	0x00010001,
 };
 
 /*
@@ -473,22 +477,22 @@ static int hs_cb_func(struct msm_rpc_client *client, void *buffer, int in_size)
 static int __init hs_rpc_cb_init(void)
 {
 	int rc = 0;
+	int i;
 
-	/* version 2 is used in 7x30 */
-	rpc_client = msm_rpc_register_client("hs",
-			HS_RPC_PROG, HS_RPC_VERS_2, 0, hs_cb_func);
-
-	if (IS_ERR(rpc_client)) {
-		pr_err("%s: couldn't open rpc client with version 2 err %ld\n",
-			 __func__, PTR_ERR(rpc_client));
-		/*version 1 is used in 7x27, 8x50 */
+	for (i = 0; i < ARRAY_SIZE(rpc_vers); i++) {
 		rpc_client = msm_rpc_register_client("hs",
-			HS_RPC_PROG, HS_RPC_VERS_1, 0, hs_cb_func);
+			HS_RPC_PROG, rpc_vers[i], 0, hs_cb_func);
+
+		if (IS_ERR(rpc_client))
+			pr_err("%s: couldn't open rpc client with version %d"
+				" err %ld\n",
+				 __func__, rpc_vers[i], PTR_ERR(rpc_client));
+		else
+			break;
 	}
 
 	if (IS_ERR(rpc_client)) {
-		pr_err("%s: couldn't open rpc client with version 1 err %ld\n",
-			 __func__, PTR_ERR(rpc_client));
+		pr_err("%s: Incompatible RPC version error\n", __func__);
 		return PTR_ERR(rpc_client);
 	}
 	rc = msm_rpc_client_req(rpc_client, HS_SUBSCRIBE_SRVC_PROC,

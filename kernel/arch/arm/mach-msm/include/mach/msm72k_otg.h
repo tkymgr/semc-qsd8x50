@@ -33,6 +33,11 @@
 #include <linux/usb.h>
 #include <linux/usb/gadget.h>
 #include <linux/usb/otg.h>
+#include <linux/wakelock.h>
+#include <mach/msm_hsusb.h>
+
+#include <asm/mach-types.h>
+#include <mach/msm_hsusb.h>
 
 #define OTGSC_BSVIE            (1 << 27)
 #define OTGSC_IDIE             (1 << 24)
@@ -120,29 +125,52 @@
 struct msm_otg {
 	struct otg_transceiver otg;
 
-	struct clk		*clk;
-	struct clk		*pclk;
-	struct clk		*cclk;
+	/* usb clocks */
+	struct clk		*hs_clk;
+	struct clk		*hs_pclk;
+	struct clk		*hs_cclk;
+	/* clk regime has created dummy clock id for phy so
+	 * that generic clk_reset api can be used to reset phy
+	 */
+	struct clk		*phy_reset_clk;
+
 	int			irq;
 	int			vbus_on_irq;
 	void __iomem		*regs;
-	u8			in_lpm;
-	atomic_t		chg_type;
-	struct msm_otg_platform_data *pdata;
-	unsigned int 		core_clk;
-	int 			(*rpc_connect)(int);
-	int 			(*phy_reset)(void __iomem *);
+	atomic_t		in_lpm;
+	/* charger-type is modified by gadget for legacy chargers
+	 * and OTG modifies it for ACA
+	 */
+	atomic_t 		chg_type;
+
 	void (*start_host)	(struct usb_bus *bus, int suspend);
 	/* Enable/disable the clocks */
 	int (*set_clk)		(struct otg_transceiver *otg, int on);
+	/* Reset phy and link */
+	void (*reset)		(struct otg_transceiver *otg, int phy_reset);
 	/* pmic notfications apis */
 	u8 pmic_notif_supp;
-	int (*pmic_notif_init) (void);
-	void (*pmic_notif_deinit) (void);
-	int (*pmic_register_vbus_sn) (void (*callback)(int online));
-	void (*pmic_unregister_vbus_sn) (void (*callback)(int online));
-	int (*pmic_enable_ldo) (int);
-	int pclk_required_during_lpm;
+	struct msm_otg_platform_data *pdata;
+
+	spinlock_t lock; /* protects OTG state */
+	struct wake_lock wlock;
+	unsigned long b_last_se0_sess; /* SRP initial condition check */
+	unsigned long inputs;
+	unsigned long tmouts;
+	u8 active_tmout;
+	struct hrtimer timer;
+	struct workqueue_struct *wq;
+	struct work_struct sm_work; /* state machine work */
+	struct work_struct otg_resume_work;
+	struct notifier_block usbdev_nb;
+	struct msm_xo_voter *xo_handle; /*handle to vote for TCXO D1 buffer*/
+	unsigned long wait_charger_init_start;
+#ifdef CONFIG_USB_MSM_ACA
+	struct timer_list	id_timer;	/* drives id_status polling */
+	unsigned		b_max_power;	/* ACA: max power of accessory*/
+	u8			aca_connection;	/* ACA: connection status */
+	int			wait_id_stable_duration;
+#endif
 };
 
 /* usb controller's protocol engine depends on AXI clock.
@@ -156,9 +184,26 @@ static inline int depends_on_axi_freq(struct otg_transceiver *xceiv)
 	if (!xceiv)
 		return 0;
 
+	/* for 8660 usb core is in sps and at the same time it does not
+	 * have core clock
+	 */
+	if (machine_is_msm8x60_surf() || machine_is_msm8x60_ffa())
+		return 0;
+
 	dev = container_of(xceiv, struct msm_otg, otg);
 
-	return !dev->core_clk;
+	return !dev->pdata->core_clk;
 }
+
+static inline int can_phy_power_collapse(struct msm_otg *dev)
+{
+	if (!dev || !dev->pdata)
+		return -ENODEV;
+
+	return dev->pdata->phy_can_powercollapse;
+}
+
+/* When detected VBUS drop, it is notified from a charger. */
+void msm_otg_notify_vbus_drop(void);
 
 #endif

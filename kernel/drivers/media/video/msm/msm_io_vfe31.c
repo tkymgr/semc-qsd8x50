@@ -1,57 +1,19 @@
 /* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+ * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Code Aurora Forum nor
- *       the names of its contributors may be used to endorse or promote
- *       products derived from this software without specific prior written
- *       permission.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
  *
- * Alternatively, provided that this notice is retained in full, this software
- * may be relicensed by the recipient under the terms of the GNU General Public
- * License version 2 ("GPL") and only version 2, in which case the provisions of
- * the GPL apply INSTEAD OF those given above.  If the recipient relicenses the
- * software under the GPL, then the identification text in the MODULE_LICENSE
- * macro must be changed to reflect "GPLv2" instead of "Dual BSD/GPL".  Once a
- * recipient changes the license terms to the GPL, subsequent recipients shall
- * not relicense under alternate licensing terms, including the BSD or dual
- * BSD/GPL terms.  In addition, the following license statement immediately
- * below and between the words START and END shall also then apply when this
- * software is relicensed under the GPL:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * START
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 and only version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- * details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * END
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  *
  */
 
@@ -61,8 +23,8 @@
 #include <mach/gpio.h>
 #include <mach/board.h>
 #include <mach/camera.h>
-#include <mach/vreg.h>
 #include <mach/clk.h>
+#include <asm/mach-types.h>
 
 #define CAMIF_CFG_RMSK             0x1fffff
 #define CAM_SEL_BMSK               0x2
@@ -82,6 +44,7 @@
 #define EXT_CAM_HSYNC_POL_SEL_SHFT 0x10
 #define EXT_CAM_VSYNC_POL_SEL_SHFT 0xF
 #define MDDI_CLK_CHICKEN_BIT_SHFT  0x7
+
 /* MIPI	CSI	controller registers */
 #define	MIPI_PHY_CONTROL			0x00000000
 #define	MIPI_PROTOCOL_CONTROL		0x00000004
@@ -141,7 +104,11 @@ static struct clk *camio_camif_pad_pbdg_clk;
 static struct clk *camio_csi_clk;
 static struct clk *camio_csi_pclk;
 static struct clk *camio_csi_vfe_clk;
+static struct clk *camio_jpeg_clk;
+static struct clk *camio_jpeg_pclk;
+static struct clk *camio_vpe_clk;
 static struct msm_camera_io_ext camio_ext;
+static struct msm_camera_io_clk camio_clk;
 static struct resource *camifpadio, *csiio;
 void __iomem *camifpadbase, *csibase;
 
@@ -221,80 +188,6 @@ void msm_io_memcpy(void __iomem *dest_addr, void __iomem *src_addr, u32 len)
 	msm_io_dump(dest_addr, len);
 }
 
-static void msm_camera_vreg_enable(void)
-{
-	struct vreg *sensor_vreg;
-	int rc;
-	sensor_vreg = vreg_get(NULL, "gp2");
-	if (IS_ERR(sensor_vreg)) {
-		CDBG("%s: vreg_get(%s) failed (%ld)\n",
-			__func__, "gp2", PTR_ERR(sensor_vreg));
-		return;
-	}
-	if (sensor_vreg) {
-		rc = vreg_set_level(sensor_vreg, 2600);
-		if (rc) {
-			CDBG("%s: vreg_set level failed (%d)\n",
-				__func__, rc);
-		}
-		rc = vreg_enable(sensor_vreg);
-		if (rc) {
-			CDBG("%s: vreg_enable() = %d \n",
-				__func__, rc);
-		}
-	}
-	sensor_vreg = vreg_get(NULL, "lvsw1");
-	if (IS_ERR(sensor_vreg)) {
-		CDBG("%s: vreg_get(%s) failed (%ld)\n",
-			__func__, "lvsw1", PTR_ERR(sensor_vreg));
-		return;
-	}
-	if (sensor_vreg) {
-		rc = vreg_set_level(sensor_vreg, 1800);
-		if (rc) {
-			CDBG("%s: vreg_set level failed (%d)\n",
-				__func__, rc);
-		}
-		rc = vreg_enable(sensor_vreg);
-		if (rc) {
-			CDBG("%s: vreg_enable() = %d \n",
-				__func__, rc);
-		}
-	}
-}
-
-static void msm_camera_vreg_disable(void)
-{
-	struct vreg *sensor_vreg;
-	int rc;
-	sensor_vreg = vreg_get(NULL, "gp2");
-	if (IS_ERR(sensor_vreg)) {
-		CDBG("%s: sensor_vreg(%s) failed (%ld)\n",
-			__func__, "gp2", PTR_ERR(sensor_vreg));
-		return;
-	}
-	if (sensor_vreg) {
-		rc = vreg_disable(sensor_vreg);
-		if (rc) {
-			CDBG("%s: vreg disable failed (%d)\n",
-				__func__, rc);
-		}
-	}
-	sensor_vreg = vreg_get(NULL, "lvsw1");
-	if (IS_ERR(sensor_vreg)) {
-		CDBG("%s: sensor_vreg(%s) failed (%ld)\n",
-			__func__, "lvsw1", PTR_ERR(sensor_vreg));
-		return;
-	}
-	if (sensor_vreg) {
-		rc = vreg_disable(sensor_vreg);
-		if (rc) {
-			CDBG("%s: vreg disable failed (%d)\n",
-				__func__, rc);
-		}
-	}
-}
-
 int msm_camio_clk_enable(enum msm_camio_clk_type clktype)
 {
 	int rc = 0;
@@ -314,7 +207,7 @@ int msm_camio_clk_enable(enum msm_camio_clk_type clktype)
 	case CAMIO_VFE_CLK:
 		camio_vfe_clk =
 		clk = clk_get(NULL, "vfe_clk");
-		msm_camio_clk_rate_set_2(clk, 122880000);
+		msm_camio_clk_rate_set_2(clk, camio_clk.vfe_clk_rate);
 		break;
 
 	case CAMIO_VFE_CAMIF_CLK:
@@ -330,7 +223,7 @@ int msm_camio_clk_enable(enum msm_camio_clk_type clktype)
 	case CAMIO_CAM_MCLK_CLK:
 		camio_cam_m_clk =
 		clk = clk_get(NULL, "cam_m_clk");
-		msm_camio_clk_rate_set_2(clk, 24000000);
+		msm_camio_clk_rate_set_2(clk, camio_clk.mclk_clk_rate);
 		break;
 
 	case CAMIO_CAMIF_PAD_PBDG_CLK:
@@ -338,18 +231,37 @@ int msm_camio_clk_enable(enum msm_camio_clk_type clktype)
 		clk = clk_get(NULL, "camif_pad_pclk");
 		break;
 
-	case CAMIO_CSI_CLK:
+	case CAMIO_CSI0_CLK:
 		camio_csi_clk =
 		clk = clk_get(NULL, "csi_clk");
 		msm_camio_clk_rate_set_2(clk, 153600000);
 		break;
-	case CAMIO_CSI_VFE_CLK:
+	case CAMIO_CSI0_VFE_CLK:
 		camio_csi_vfe_clk =
 		clk = clk_get(NULL, "csi_vfe_clk");
 		break;
-	case CAMIO_CSI_PCLK:
+	case CAMIO_CSI0_PCLK:
 		camio_csi_pclk =
 		clk = clk_get(NULL, "csi_pclk");
+		break;
+
+	case CAMIO_JPEG_CLK:
+		camio_jpeg_clk =
+		clk = clk_get(NULL, "jpeg_clk");
+		clk_set_min_rate(clk, 144000000);
+		break;
+	case CAMIO_JPEG_PCLK:
+		camio_jpeg_pclk =
+		clk = clk_get(NULL, "jpeg_pclk");
+		break;
+	case CAMIO_VPE_CLK:
+		camio_vpe_clk =
+		clk = clk_get(NULL, "vpe_clk");
+#ifdef CONFIG_MSM_VPE_STANDALONE
+		msm_camio_clk_rate_set_2(clk, 153600000);
+#else
+		msm_camio_clk_set_min_rate(clk, 150000000);
+#endif /* CONFIG_MSM_VPE_STANDALONE */
 		break;
 	default:
 		break;
@@ -378,6 +290,8 @@ int msm_camio_clk_disable(enum msm_camio_clk_type clktype)
 
 	case CAMIO_VFE_CLK:
 		clk = camio_vfe_clk;
+		if (camio_clk.vfe_clk_rate == 192000000)
+			msm_camio_clk_rate_set_2(clk, 153600000);
 		break;
 
 	case CAMIO_VFE_CAMIF_CLK:
@@ -395,14 +309,23 @@ int msm_camio_clk_disable(enum msm_camio_clk_type clktype)
 	case CAMIO_CAMIF_PAD_PBDG_CLK:
 		clk = camio_camif_pad_pbdg_clk;
 		break;
-	case CAMIO_CSI_CLK:
+	case CAMIO_CSI0_CLK:
 		clk = camio_csi_clk;
 		break;
-	case CAMIO_CSI_VFE_CLK:
+	case CAMIO_CSI0_VFE_CLK:
 		clk = camio_csi_vfe_clk;
 		break;
-	case CAMIO_CSI_PCLK:
+	case CAMIO_CSI0_PCLK:
 		clk = camio_csi_pclk;
+		break;
+	case CAMIO_JPEG_CLK:
+		clk = camio_jpeg_clk;
+		break;
+	case CAMIO_JPEG_PCLK:
+		clk = camio_jpeg_pclk;
+		break;
+	case CAMIO_VPE_CLK:
+		clk = camio_vpe_clk;
 		break;
 	default:
 		break;
@@ -428,6 +351,23 @@ void msm_camio_clk_rate_set_2(struct clk *clk, int rate)
 	clk_set_rate(clk, rate);
 }
 
+void msm_camio_clk_set_min_rate(struct clk *clk, int rate)
+{
+	clk_set_min_rate(clk, rate);
+}
+
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+void msm_camio_cam_mclk_enable(int rate)
+{
+	struct clk *clk = NULL;
+	camio_cam_m_clk =
+	clk = clk_get(NULL, "cam_m_clk");
+	msm_camio_clk_rate_set_2(clk, rate);
+	if (!IS_ERR(clk))
+		clk_enable(clk);
+}
+#endif
+
 static irqreturn_t msm_io_csi_irq(int irq_num, void *data)
 {
 	uint32_t irq;
@@ -436,35 +376,48 @@ static irqreturn_t msm_io_csi_irq(int irq_num, void *data)
 	msm_io_w(irq, csibase + MIPI_INTERRUPT_STATUS);
 	return IRQ_HANDLED;
 }
+
+int msm_camio_jpeg_clk_disable(void)
+{
+	msm_camio_clk_disable(CAMIO_JPEG_CLK);
+	msm_camio_clk_disable(CAMIO_JPEG_PCLK);
+	/* Need to add the code for remove PM QOS requirement */
+	return 0;
+}
+
+
+int msm_camio_jpeg_clk_enable(void)
+{
+	msm_camio_clk_enable(CAMIO_JPEG_CLK);
+	msm_camio_clk_enable(CAMIO_JPEG_PCLK);
+	return 0;
+}
+
+int msm_camio_vpe_clk_disable(void)
+{
+	msm_camio_clk_disable(CAMIO_VPE_CLK);
+	return 0;
+}
+
+int msm_camio_vpe_clk_enable(void)
+{
+	msm_camio_clk_enable(CAMIO_VPE_CLK);
+	return 0;
+}
+
 int msm_camio_enable(struct platform_device *pdev)
 {
 	int rc = 0;
+	uint32_t val;
 	struct msm_camera_sensor_info *sinfo = pdev->dev.platform_data;
-	struct msm_camera_device_platform_data *camdev = sinfo->pdata;
-
-	camio_ext = camdev->ioext;
-
-	camdev->camera_gpio_on();
-	msm_camera_vreg_enable();
 	msm_camio_clk_enable(CAMIO_VFE_PBDG_CLK);
-	msm_camio_clk_enable(CAMIO_CAMIF_PAD_PBDG_CLK);
+#ifdef CONFIG_MACH_SEMC_ZEUS
 	msm_camio_clk_enable(CAMIO_CAM_MCLK_CLK);
-	msm_camio_clk_enable(CAMIO_VFE_CLK);
-	if (!sinfo->csi_if) {
-		camifpadio = request_mem_region(camio_ext.camifpadphy,
-			camio_ext.camifpadsz, pdev->name);
-		if (!camifpadio) {
-			rc = -EBUSY;
-			goto common_fail;
-		}
-		camifpadbase = ioremap(camio_ext.camifpadphy,
-			camio_ext.camifpadsz);
-		if (!camifpadbase) {
-			rc = -ENOMEM;
-			goto parallel_busy;
-		}
+#endif /* CONFIG_MACH_SEMC_ZEUS */
+	if (!sinfo->csi_if)
 		msm_camio_clk_enable(CAMIO_VFE_CAMIF_CLK);
-	} else {
+	else {
+		msm_camio_clk_enable(CAMIO_VFE_CLK);
 		csiio = request_mem_region(camio_ext.csiphy,
 			camio_ext.csisz, pdev->name);
 		if (!csiio) {
@@ -482,54 +435,74 @@ int msm_camio_enable(struct platform_device *pdev)
 		if (rc < 0)
 			goto csi_irq_fail;
 		/* enable required clocks for CSI */
-		msm_camio_clk_enable(CAMIO_CSI_PCLK);
-		msm_camio_clk_enable(CAMIO_CSI_VFE_CLK);
-		msm_camio_clk_enable(CAMIO_CSI_CLK);
+		msm_camio_clk_enable(CAMIO_CSI0_PCLK);
+		msm_camio_clk_enable(CAMIO_CSI0_VFE_CLK);
+		msm_camio_clk_enable(CAMIO_CSI0_CLK);
+
+		msleep(10);
+		val = (20 <<
+			MIPI_PHY_D0_CONTROL2_SETTLE_COUNT_SHFT) |
+			(0x0F << MIPI_PHY_D0_CONTROL2_HS_TERM_IMP_SHFT) |
+			(0x0 << MIPI_PHY_D0_CONTROL2_LP_REC_EN_SHFT) |
+			(0x1 << MIPI_PHY_D0_CONTROL2_ERR_SOT_HS_EN_SHFT);
+		CDBG("%s MIPI_PHY_D0_CONTROL2 val=0x%x\n", __func__, val);
+		msm_io_w(val, csibase + MIPI_PHY_D0_CONTROL2);
+		msm_io_w(val, csibase + MIPI_PHY_D1_CONTROL2);
+		msm_io_w(val, csibase + MIPI_PHY_D2_CONTROL2);
+		msm_io_w(val, csibase + MIPI_PHY_D3_CONTROL2);
+
+		val = (0x0F << MIPI_PHY_CL_CONTROL_HS_TERM_IMP_SHFT) |
+			(0x0 << MIPI_PHY_CL_CONTROL_LP_REC_EN_SHFT);
+		CDBG("%s MIPI_PHY_CL_CONTROL val=0x%x\n", __func__, val);
+		msm_io_w(val, csibase + MIPI_PHY_CL_CONTROL);
 	}
 	return 0;
-
-parallel_busy:
-	release_mem_region(camio_ext.camifpadphy, camio_ext.camifpadsz);
-	goto common_fail;
 csi_irq_fail:
 	iounmap(csibase);
 csi_busy:
 	release_mem_region(camio_ext.csiphy, camio_ext.csisz);
 common_fail:
+	msm_camio_clk_disable(CAMIO_VFE_PBDG_CLK);
 	msm_camio_clk_disable(CAMIO_VFE_CLK);
 	msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
-	msm_camio_clk_disable(CAMIO_CAMIF_PAD_PBDG_CLK);
-	msm_camio_clk_disable(CAMIO_VFE_PBDG_CLK);
-	msm_camera_vreg_disable();
-	camdev->camera_gpio_off();
 	return rc;
 }
 
 void msm_camio_disable(struct platform_device *pdev)
 {
 	struct msm_camera_sensor_info *sinfo = pdev->dev.platform_data;
-	struct msm_camera_device_platform_data *camdev = sinfo->pdata;
-
+	uint32_t val;
 	if (!sinfo->csi_if) {
 		msm_camio_clk_disable(CAMIO_VFE_CAMIF_CLK);
-		iounmap(camifpadbase);
-		release_mem_region(camio_ext.camifpadphy, camio_ext.camifpadsz);
 	} else {
+		val = (20 <<
+			MIPI_PHY_D0_CONTROL2_SETTLE_COUNT_SHFT) |
+			(0x0F << MIPI_PHY_D0_CONTROL2_HS_TERM_IMP_SHFT) |
+			(0x0 << MIPI_PHY_D0_CONTROL2_LP_REC_EN_SHFT) |
+			(0x1 << MIPI_PHY_D0_CONTROL2_ERR_SOT_HS_EN_SHFT);
+		CDBG("%s MIPI_PHY_D0_CONTROL2 val=0x%x\n", __func__, val);
+		msm_io_w(val, csibase + MIPI_PHY_D0_CONTROL2);
+		msm_io_w(val, csibase + MIPI_PHY_D1_CONTROL2);
+		msm_io_w(val, csibase + MIPI_PHY_D2_CONTROL2);
+		msm_io_w(val, csibase + MIPI_PHY_D3_CONTROL2);
+		val = (0x0F << MIPI_PHY_CL_CONTROL_HS_TERM_IMP_SHFT) |
+			(0x0 << MIPI_PHY_CL_CONTROL_LP_REC_EN_SHFT);
+		CDBG("%s MIPI_PHY_CL_CONTROL val=0x%x\n", __func__, val);
+		msm_io_w(val, csibase + MIPI_PHY_CL_CONTROL);
+		msleep(10);
 		free_irq(camio_ext.csiirq, 0);
-		msm_camio_clk_disable(CAMIO_CSI_PCLK);
-		msm_camio_clk_disable(CAMIO_CSI_VFE_CLK);
-		msm_camio_clk_disable(CAMIO_CSI_CLK);
+		msm_camio_clk_disable(CAMIO_CSI0_PCLK);
+		msm_camio_clk_disable(CAMIO_CSI0_VFE_CLK);
+		msm_camio_clk_disable(CAMIO_CSI0_CLK);
+		msm_camio_clk_disable(CAMIO_VFE_CLK);
 		iounmap(csibase);
 		release_mem_region(camio_ext.csiphy, camio_ext.csisz);
 	}
-	CDBG("disable clocks\n");
-
-	msm_camio_clk_disable(CAMIO_VFE_CLK);
-	msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
-	msm_camio_clk_disable(CAMIO_CAMIF_PAD_PBDG_CLK);
 	msm_camio_clk_disable(CAMIO_VFE_PBDG_CLK);
-	msm_camera_vreg_disable();
-	camdev->camera_gpio_off();
+#if !defined(CONFIG_SEMC_CAMERA_MODULE) && \
+	!defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+	msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
+#endif
 }
 
 void msm_camio_camif_pad_reg_reset(void)
@@ -605,23 +578,86 @@ int msm_camio_probe_on(struct platform_device *pdev)
 	struct msm_camera_sensor_info *sinfo = pdev->dev.platform_data;
 	struct msm_camera_device_platform_data *camdev = sinfo->pdata;
 	camdev->camera_gpio_on();
-	msm_camera_vreg_enable();
+#ifdef CONFIG_MACH_SEMC_ZEUS
 	return msm_camio_clk_enable(CAMIO_CAM_MCLK_CLK);
+#else
+	return 0;
+#endif /* CONFIG_MACH_SEMC_ZEUS */
 }
 
 int msm_camio_probe_off(struct platform_device *pdev)
 {
 	struct msm_camera_sensor_info *sinfo = pdev->dev.platform_data;
 	struct msm_camera_device_platform_data *camdev = sinfo->pdata;
-	msm_camera_vreg_disable();
 	camdev->camera_gpio_off();
+#if !defined(CONFIG_SEMC_CAMERA_MODULE) && \
+	!defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
 	return msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
+#else
+	return 0;
+#endif
 }
 
-int msm_camio_read_camif_status(void)
+int msm_camio_sensor_clk_on(struct platform_device *pdev)
 {
-	return msm_io_r(camifpadbase + 0x4);
+	int rc = 0;
+	struct msm_camera_sensor_info *sinfo = pdev->dev.platform_data;
+	struct msm_camera_device_platform_data *camdev = sinfo->pdata;
+	camio_clk = camdev->ioclk;
+	camio_ext = camdev->ioext;
+	camdev->camera_gpio_on();
+#if !defined(CONFIG_SEMC_CAMERA_MODULE) && \
+	!defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+	msm_camio_clk_enable(CAMIO_CAM_MCLK_CLK);
+#endif
+	msm_camio_clk_enable(CAMIO_CAMIF_PAD_PBDG_CLK);
+	if (!sinfo->csi_if) {
+		camifpadio = request_mem_region(camio_ext.camifpadphy,
+			camio_ext.camifpadsz, pdev->name);
+		msm_camio_clk_enable(CAMIO_VFE_CLK);
+		if (!camifpadio) {
+			rc = -EBUSY;
+			goto common_fail;
+		}
+		camifpadbase = ioremap(camio_ext.camifpadphy,
+			camio_ext.camifpadsz);
+		if (!camifpadbase) {
+			CDBG("msm_camio_sensor_clk_on fail\n");
+			rc = -ENOMEM;
+			goto parallel_busy;
+		}
+	}
+	return rc;
+parallel_busy:
+	release_mem_region(camio_ext.camifpadphy, camio_ext.camifpadsz);
+	goto common_fail;
+common_fail:
+	msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
+	msm_camio_clk_disable(CAMIO_VFE_CLK);
+	msm_camio_clk_disable(CAMIO_CAMIF_PAD_PBDG_CLK);
+	camdev->camera_gpio_off();
+	return rc;
 }
+
+int msm_camio_sensor_clk_off(struct platform_device *pdev)
+{
+	uint32_t rc = 0;
+	struct msm_camera_sensor_info *sinfo = pdev->dev.platform_data;
+	struct msm_camera_device_platform_data *camdev = sinfo->pdata;
+	camdev->camera_gpio_off();
+#if !defined(CONFIG_SEMC_CAMERA_MODULE) && \
+	!defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+	rc = msm_camio_clk_disable(CAMIO_CAM_MCLK_CLK);
+#endif
+	rc = msm_camio_clk_disable(CAMIO_CAMIF_PAD_PBDG_CLK);
+	if (!sinfo->csi_if) {
+		iounmap(camifpadbase);
+		release_mem_region(camio_ext.camifpadphy, camio_ext.camifpadsz);
+		rc = msm_camio_clk_disable(CAMIO_VFE_CLK);
+	}
+	return rc;
+}
+
 int msm_camio_csi_config(struct msm_camera_csi_params *csi_params)
 {
 	int rc = 0;

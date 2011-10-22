@@ -70,7 +70,7 @@ struct usb_function_map {
 	unsigned bit_pos;
 };
 
-#ifndef CONFIG_USB_ANDROID
+#ifdef CONFIG_USB_FUNCTION
 /* platform device data for msm_hsusb driver */
 struct usb_composition {
 	__u16   product_id;
@@ -128,7 +128,6 @@ struct msm_hsusb_gadget_platform_data {
 	int *phy_init_seq;
 	void (*phy_reset)(void);
 
-	u32 swfi_latency;
 	int self_powered;
 	int is_phy_status_timer_on;
 };
@@ -163,7 +162,17 @@ struct msm_otg_platform_data {
 	int (*phy_reset)(void __iomem *);
 	unsigned int core_clk;
 	int pmic_vbus_irq;
-	int pclk_required_during_lpm;
+	/* if usb link is in sps there is no need for
+	 * usb pclk as dayatona fabric clock will be
+	 * used instead
+	 */
+	int usb_in_sps;
+	enum pre_emphasis_level	pemp_level;
+	enum cdr_auto_reset	cdr_autoreset;
+	enum hs_drv_amplitude	drv_ampl;
+	enum se1_gate_state	se1_gating;
+	int			phy_reset_sig_inverted;
+	int			phy_can_powercollapse;
 
 	int (*ldo_init) (int init);
 	int (*ldo_enable) (int enable);
@@ -171,8 +180,7 @@ struct msm_otg_platform_data {
 
 	u32 			swfi_latency;
 	/* pmic notfications apis */
-	int (*pmic_notif_init) (void);
-	void (*pmic_notif_deinit) (void);
+	int (*pmic_notif_init) (void (*callback)(int online), int init);
 	int (*pmic_register_vbus_sn) (void (*callback)(int online));
 	void (*pmic_unregister_vbus_sn) (void (*callback)(int online));
 	int (*pmic_enable_ldo) (int);
@@ -191,7 +199,7 @@ struct msm_otg_platform_data {
 
 struct msm_usb_host_platform_data {
 	unsigned phy_info;
-	int (*phy_reset)(void __iomem *addr);
+	unsigned int power_budget;
 	void (*config_gpio)(unsigned int config);
 	void (*vbus_power) (unsigned phy_info, int on);
 	int  (*vbus_init)(int init);

@@ -36,7 +36,7 @@ endif
 #
 $(PRODUCT_OUT)/kernel.elf: $(TARGET_PREBUILT_KERNEL) $(PRODUCT_OUT)/ramdisk.img | sin-tools
 	$(hide) $(HOST_OUT_EXECUTABLES)/mkelf.py -o  $(dir $@)/kernel-part.img \
-		$(TARGET_PREBUILT_KERNEL)@0x20008000 $(PRODUCT_OUT)/ramdisk.img@0x24000000,ramdisk && \
+		$(TARGET_PREBUILT_KERNEL)@0x208000 $(PRODUCT_OUT)/ramdisk.img@0x1000000,ramdisk && \
 		$(SEMCSC) -c $(PRODUCT_PARTITION_CONFIG) -p Kernel -t internal -i $(dir $@)/kernel-part.img -o $@
 
 

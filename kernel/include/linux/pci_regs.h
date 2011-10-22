@@ -236,7 +236,7 @@
 #define  PCI_PM_CAP_PME_SHIFT	11	/* Start of the PME Mask in PMC */
 #define PCI_PM_CTRL		4	/* PM control and status register */
 #define  PCI_PM_CTRL_STATE_MASK	0x0003	/* Current power state (D0 to D3) */
-#define  PCI_PM_CTRL_NO_SOFT_RESET	0x0004	/* No reset for D3hot->D0 */
+#define  PCI_PM_CTRL_NO_SOFT_RESET	0x0008	/* No reset for D3hot->D0 */
 #define  PCI_PM_CTRL_PME_ENABLE	0x0100	/* PME pin enable */
 #define  PCI_PM_CTRL_DATA_SEL_MASK	0x1e00	/* Data select (??) */
 #define  PCI_PM_CTRL_DATA_SCALE_MASK	0x6000	/* Data scale (??) */
@@ -298,7 +298,7 @@
 #define PCI_MSI_DATA_32		8	/* 16 bits of data for 32-bit devices */
 #define PCI_MSI_MASK_32		12	/* Mask bits register for 32-bit devices */
 #define PCI_MSI_DATA_64		12	/* 16 bits of data for 64-bit devices */
-#define PCI_MSI_MASK_BIT	16	/* Mask bits register */
+#define PCI_MSI_MASK_64		16	/* Mask bits register for 64-bit devices */
 
 /* MSI-X registers (these are at offset PCI_MSIX_FLAGS) */
 #define PCI_MSIX_FLAGS		2
@@ -306,7 +306,6 @@
 #define  PCI_MSIX_FLAGS_ENABLE	(1 << 15)
 #define  PCI_MSIX_FLAGS_MASKALL	(1 << 14)
 #define PCI_MSIX_FLAGS_BIRMASK	(7 << 0)
-#define PCI_MSIX_FLAGS_BITMASK	(1 << 0)
 
 /* CompactPCI Hotswap Register */
 

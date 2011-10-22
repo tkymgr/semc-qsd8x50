@@ -1,72 +1,19 @@
 /* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Alternatively, and instead of the terms immediately above, this
- * software may be relicensed by the recipient at their option under the
- * terms of the GNU General Public License version 2 ("GPL") and only
- * version 2.  If the recipient chooses to relicense the software under
- * the GPL, then the recipient shall replace all of the text immediately
- * above and including this paragraph with the text immediately below
- * and between the words START OF ALTERNATE GPL TERMS and END OF
- * ALTERNATE GPL TERMS and such notices and license terms shall apply
- * INSTEAD OF the notices and licensing terms given above.
- *
- * START OF ALTERNATE GPL TERMS
- *
- * Copyright (c) 2010, Code Aurora Forum. All rights reserved.
- *
- * This software was originally licensed under the Code Aurora Forum
- * Inc. Dual BSD/GPL License version 1.1 and relicensed as permitted
- * under the terms thereof by a recipient under the General Public
- * License Version 2.
+ * Copyright (C) 2011 Sony Ericsson Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
  *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301, USA.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * END OF ALTERNATE GPL TERMS
  *
  */
 
@@ -91,6 +38,22 @@
 #include "mdp4.h"
 
 #define DTV_BASE	0xD0000
+
+/*#define DEBUG*/
+#ifdef DEBUG
+static void __mdp_outp(uint32 port, uint32 value)
+{
+	uint32 in_val;
+
+	outpdw(port, value);
+	in_val = inpdw(port);
+	printk(KERN_INFO "MDP-DTV[%04x] => %08x [%08x]\n",
+		port-(uint32)(MDP_BASE + DTV_BASE), value, in_val);
+}
+
+#undef MDP_OUTP
+#define MDP_OUTP(port, value)	__mdp_outp((uint32)(port), (value))
+#endif
 
 static int first_pixel_start_x;
 static int first_pixel_start_y;
@@ -163,13 +126,21 @@ int mdp4_dtv_on(struct platform_device *pdev)
 
 	if (dtv_pipe == NULL) {
 		ptype = mdp4_overlay_format2type(format);
-		pipe = mdp4_overlay_pipe_alloc(ptype);
-		if (pipe == NULL)
+		if (ptype < 0)
+			printk(KERN_INFO "%s: format2type failed\n", __func__);
+		pipe = mdp4_overlay_pipe_alloc(ptype, FALSE);
+		if (pipe == NULL) {
+			printk(KERN_INFO "%s: pipe_alloc failed\n", __func__);
 			return -EBUSY;
+		}
+		pipe->pipe_used++;
 		pipe->mixer_stage  = MDP4_MIXER_STAGE_BASE;
 		pipe->mixer_num  = MDP4_MIXER1;
 		pipe->src_format = format;
-		mdp4_overlay_format2pipe(pipe);
+		mdp4_overlay_panel_mode(pipe->mixer_num, MDP4_PANEL_DTV);
+		ret = mdp4_overlay_format2pipe(pipe);
+		if (ret < 0)
+			printk(KERN_INFO "%s: format2type failed\n", __func__);
 
 		dtv_pipe = pipe; /* keep it */
 	} else {
@@ -189,7 +160,7 @@ int mdp4_dtv_on(struct platform_device *pdev)
 	pipe->srcp0_ystride = fbi->fix.line_length;
 
 	mdp4_overlay_dmae_xy(pipe);	/* dma_e */
-	mdp4_overlay_dmae_cfg(mfd, 1);
+	mdp4_overlay_dmae_cfg(mfd, 0);
 
 	mdp4_overlay_rgb_setup(pipe);
 
@@ -210,8 +181,14 @@ int mdp4_dtv_on(struct platform_device *pdev)
 	dtv_underflow_clr = mfd->panel_info.lcdc.underflow_clr;
 	dtv_hsync_skew = mfd->panel_info.lcdc.hsync_skew;
 
-	dtv_width = mfd->panel_info.xres;
-	dtv_height = mfd->panel_info.yres;
+	pr_info("%s: <ID=%d %dx%d (%d,%d,%d), (%d,%d,%d) %dMHz>\n", __func__,
+		var->reserved[3], var->xres, var->yres,
+		var->right_margin, var->hsync_len, var->left_margin,
+		var->lower_margin, var->vsync_len, var->upper_margin,
+		var->pixclock/1000/1000);
+
+	dtv_width = var->xres;
+	dtv_height = var->yres;
 	dtv_bpp = mfd->panel_info.bpp;
 
 	hsync_period =
@@ -249,8 +226,8 @@ int mdp4_dtv_on(struct platform_device *pdev)
 	}
 
 	dtv_underflow_clr |= 0x80000000;	/* enable recovery */
-	hsync_polarity = 0;
-	vsync_polarity = 0;
+	hsync_polarity = fbi->var.yres >= 720 ? 0 : 1;
+	vsync_polarity = fbi->var.yres >= 720 ? 0 : 1;
 	data_en_polarity = 0;
 
 	ctrl_polarity =
@@ -271,37 +248,62 @@ int mdp4_dtv_on(struct platform_device *pdev)
 	MDP_OUTP(MDP_BASE + DTV_BASE + 0x30, active_v_start);
 	MDP_OUTP(MDP_BASE + DTV_BASE + 0x38, active_v_end);
 
-	ret = panel_next_on(pdev);
-	if (ret == 0) {
-		/* enable DTV block */
-		MDP_OUTP(MDP_BASE + DTV_BASE, 1);
-		mdp_pipe_ctrl(MDP_OVERLAY1_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
-	}
+	/* Test pattern 8 x 8 pixel */
+	/* MDP_OUTP(MDP_BASE + DTV_BASE + 0x4C, 0x80000808); */
+
 	/* MDP cmd block disable */
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
 
-	return ret;
+	return 0;
 }
 
 int mdp4_dtv_off(struct platform_device *pdev)
 {
-	int ret = 0;
-
-	/* MDP cmd block enable */
-	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
-	MDP_OUTP(MDP_BASE + DTV_BASE, 0);
-	/* MDP cmd block disable */
-	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
-	mdp_pipe_ctrl(MDP_OVERLAY1_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
-
-	ret = panel_next_off(pdev);
-
 	/* delay to make sure the last frame finishes */
 	msleep(100);
+
+	pr_info("%s\n", __func__);
 
 	/* dis-engage rgb2 from mixer1 */
 	if (dtv_pipe)
 		mdp4_mixer_stage_down(dtv_pipe);
+
+	return 0;
+}
+
+int mdp4_dtv_lcdc_enable(struct platform_device *pdev, int enable)
+{
+	int dtv_enable, ret = 0;
+	/* MDP cmd block enable */
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
+	dtv_enable = inpdw(MDP_BASE + DTV_BASE);
+	if (enable) {
+		if (!dtv_enable) {
+			ret = panel_next_on(pdev);
+			if (ret == 0) {
+				/* enable DTV block */
+				MDP_OUTP(MDP_BASE + DTV_BASE, 1);
+				mdp_pipe_ctrl(MDP_OVERLAY1_BLOCK,
+					MDP_BLOCK_POWER_ON, FALSE);
+				dev_info(&pdev->dev, "%s: on", __func__);
+			} else {
+				dev_warn(&pdev->dev,
+					"%s: panel_next_on failed", __func__);
+			}
+		}
+	} else {
+		if (dtv_enable) {
+			MDP_OUTP(MDP_BASE + DTV_BASE, 0);
+			mdp_pipe_ctrl(MDP_OVERLAY1_BLOCK,
+				MDP_BLOCK_POWER_OFF, FALSE);
+			ret = panel_next_off(pdev);
+			if (ret != 0)
+				dev_warn(&pdev->dev,
+					"%s: panel_next_off failed", __func__);
+		}
+	}
+	/* MDP cmd block disable */
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
 
 	return ret;
 }
@@ -318,7 +320,7 @@ void mdp4_dtv_overlay(struct msm_fb_data_type *mfd)
 {
 	struct fb_info *fbi = mfd->fbi;
 	uint8 *buf;
-	int bpp;
+	int bpp, dtv_on;
 	unsigned long flag;
 	struct mdp4_overlay_pipe *pipe;
 
@@ -331,7 +333,7 @@ void mdp4_dtv_overlay(struct msm_fb_data_type *mfd)
 	buf += fbi->var.xoffset * bpp +
 		fbi->var.yoffset * fbi->fix.line_length;
 
-	mutex_lock(&mfd->dma->ov_mutex);
+	down(&mfd->dma->ov_sem);
 
 	pipe = dtv_pipe;
 	pipe->srcp0_addr = (uint32) buf;
@@ -339,16 +341,23 @@ void mdp4_dtv_overlay(struct msm_fb_data_type *mfd)
 	mdp4_overlay_reg_flush(pipe, 1); /* rgb2 and mixer1 */
 
 	/* enable irq */
-	spin_lock_irqsave(&mdp_spin_lock, flag);
-	mdp_enable_irq(MDP_OVERLAY1_TERM);
-	INIT_COMPLETION(dtv_pipe->comp);
-	mfd->dma->waiting = TRUE;
-	outp32(MDP_INTR_CLEAR, INTR_OVERLAY1_DONE);
-	mdp_intr_mask |= INTR_OVERLAY1_DONE;
-	outp32(MDP_INTR_ENABLE, mdp_intr_mask);
-	spin_unlock_irqrestore(&mdp_spin_lock, flag);
-	wait_for_completion_killable(&dtv_pipe->comp);
-	mdp_disable_irq(MDP_OVERLAY1_TERM);
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
+	dtv_on = inpdw(MDP_BASE + DTV_BASE);
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
+	if (dtv_on) {
+		spin_lock_irqsave(&mdp_spin_lock, flag);
+		mdp_enable_irq(MDP_OVERLAY1_TERM);
+		INIT_COMPLETION(dtv_pipe->comp);
+		mfd->dma->waiting = TRUE;
+		outp32(MDP_INTR_CLEAR, INTR_OVERLAY1_DONE);
+		mdp_intr_mask |= INTR_OVERLAY1_DONE;
+		outp32(MDP_INTR_ENABLE, mdp_intr_mask);
+		spin_unlock_irqrestore(&mdp_spin_lock, flag);
+		wait_for_completion_killable(&dtv_pipe->comp);
+		mdp_disable_irq(MDP_OVERLAY1_TERM);
 
-	mutex_unlock(&mfd->dma->ov_mutex);
+		mdp4_stat.kickoff_dtv++;
+	}
+
+	up(&mfd->dma->ov_sem);
 }

@@ -132,6 +132,17 @@ config INPUT_ATI_REMOTE2
 	  To compile this driver as a module, choose M here: the module will be
 	  called ati_remote2.
 
+config INPUT_KEYCHORD
+	tristate "Key chord input driver support"
+	help
+	  Say Y here if you want to enable the key chord driver
+	  accessible at /dev/keychord.  This driver can be used
+	  for receiving notifications when client specified key
+	  combinations are pressed.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called keychord.
+
 config INPUT_KEYSPAN_REMOTE
 	tristate "Keyspan DMR USB remote control (EXPERIMENTAL)"
 	depends on EXPERIMENTAL
@@ -193,6 +204,16 @@ config INPUT_CM109
 	  To compile this driver as a module, choose M here: the module will be
 	  called cm109.
 
+config INPUT_TWL4030_PWRBUTTON
+	tristate "TWL4030 Power button Driver"
+	depends on TWL4030_CORE
+	help
+	  Say Y here if you want to enable power key reporting via the
+	  TWL4030 family of chips.
+
+	  To compile this driver as a module, choose M here. The module will
+	  be called twl4030_pwrbutton.
+
 config INPUT_UINPUT
 	tristate "User level driver support"
 	help
@@ -212,6 +233,24 @@ config INPUT_SGI_BTNS
 	  To compile this driver as a module, choose M here: the
 	  module will be called sgi_btns.
 
+config INPUT_WINBOND_CIR
+	tristate "Winbond IR remote control"
+	depends on X86 && PNP
+	select NEW_LEDS
+	select LEDS_CLASS
+	select LEDS_TRIGGERS
+	select BITREVERSE
+	help
+	  Say Y here if you want to use the IR remote functionality found
+	  in some Winbond SuperI/O chips. Currently only the WPCD376I
+	  chip is supported (included in some Intel Media series motherboards).
+
+	  IR Receive and wake-on-IR from suspend and power-off is currently
+	  supported.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called winbond_cir.
+
 config INPUT_GPIO
 	tristate "GPIO driver support"
 	help
@@ -219,7 +258,7 @@ config INPUT_GPIO
 
 config HP_SDC_RTC
 	tristate "HP SDC Real Time Clock"
-	depends on GSC || HP300
+	depends on (GSC || HP300) && SERIO
 	select HP_SDC
 	help
 	  Say Y here if you want to support the built-in real time clock
@@ -232,56 +271,206 @@ config INPUT_PCF50633_PMU
 	 Say Y to include support for delivering  PMU events via  input
 	 layer on NXP PCF50633.
 
-config INPUT_KEYCHORD
-	tristate "Key chord input driver support"
+config INPUT_GPIO_ROTARY_ENCODER
+	tristate "Rotary encoders connected to GPIO pins"
+	depends on GPIOLIB && GENERIC_GPIO
 	help
-	  Say Y here if you want to enable the key chord driver
-	  accessible at /dev/keychord.  This driver can be used
-	  for receiving notifications when client specified key
-	  combinations are pressed.
+	  Say Y here to add support for rotary encoders connected to GPIO lines.
+	  Check file:Documentation/input/rotary-encoder.txt for more
+	  information.
 
 	  To compile this driver as a module, choose M here: the
-	  module will be called keychord.
+	  module will be called rotary_encoder.
 
-config BMA150
+config INPUT_RB532_BUTTON
+	tristate "Mikrotik Routerboard 532 button interface"
+	depends on MIKROTIK_RB532
+	depends on GPIOLIB && GENERIC_GPIO
+	select INPUT_POLLDEV
+	help
+	  Say Y here if you want support for the S1 button built into
+	  Mikrotik's Routerboard 532.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called rb532_button.
+
+config INPUT_DM355EVM
+	tristate "TI DaVinci DM355 EVM Keypad and IR Remote"
+	depends on MFD_DM355EVM_MSP
+	help
+	  Supports the pushbuttons and IR remote used with
+	  the DM355 EVM board.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called dm355evm_keys.
+
+config INPUT_BFIN_ROTARY
+	tristate "Blackfin Rotary support"
+	depends on BF54x || BF52x
+	help
+	  Say Y here if you want to use the Blackfin Rotary.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bfin-rotary.
+
+config INPUT_WM831X_ON
+	tristate "WM831X ON pin"
+	depends on MFD_WM831X
+	help
+	  Support the ON pin of WM831X PMICs as an input device
+	  reporting power button status.
+
+	  To compile this driver as a module, choose M here: the module
+	  will be called wm831x_on.
+
+config INPUT_PCAP
+	tristate "Motorola EZX PCAP misc input events"
+	depends on EZX_PCAP
+	help
+	  Say Y here if you want to use Power key and Headphone button
+	  on Motorola EZX phones.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called pcap_keys.
+
+config INPUT_CAPELLA_CM3602
+	tristate "Capella CM3602 proximity and light sensor"
+	help
+	  Say Y here to enable the Capella CM3602 Short Distance Proximity
+	  Sensor with Ambient Light Sensor.
+
+config PMIC8058_PWRKEY
+	tristate "PMIC8058 power key support"
+	default n
+	depends on PMIC8058
+	help
+	  Say Y here if you want support for the PMIC8058 power key.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called pmic8058-pwrkey.
+
+config PMIC8058_OTHC
+	tristate "Qualcomm PMIC8058 OTHC support"
+	default n
+	depends on PMIC8058
+	help
+	  Say Y here if you want support PMIC8058 OTHC.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called pmic8058-othc.
+
+config INPUT_BMA150
 	tristate "Bosch BMA150 accelerometer"
 	default n
 	help
 	  Say Y here if you want support for the BMA150 accelerometer
-	  device.
+	  SPI device.
+
+	  This driver supports both SPI and I2C, but if you need I2C,
+	  the recommended driver is BMA150_NG which will replace this
+	  driver eventually.
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called bma150.
 
-config INPUT_BMA150_NG
-        tristate "Bosch BMA150 accelerometer (next gen)"
+config INPUT_KP_FLIP_SWITCH
+	tristate "flip switch detection support"
+	default y
+	depends on PMIC8058 && ARCH_MSM7X30
+	help
+	  Say Y here if you want support for the flip switch detection.
+	  This driver can be used with Qualcomm MSM7x30 based development
+	  platforms which have flip switch as part of the PMIC8058 keypad.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called kp_flip_switch.
+
+config INPUT_BMA150_I2C
+	bool "Use I2C protocol for BMA150"
+	depends on INPUT_BMA150 && I2C
+	default n
+	help
+	  Say Y here if you want i2c support for the BMA150 accelerometer
+	  device.
+
+
+config INPUT_GP2A
+        tristate "Sharp GP2AP002A00F I2C Proximity/Opto sensor driver"
+        depends on ARCH_MSM && I2C
         default n
-        depends on I2C && ! INPUT_BMA150
         help
-          Say Y here if you want support for the BMA150 accelerometer
-          device.
+          Say Y here if you want support for the Sharp GP2AP002A00F proximity
+          and ambient light sensor.
 
-          This driver should not be selected together with the regular
-          BMA150 driver. It does NOT support SPI like the old one.
+config INPUT_AK8975
+	tristate "AK8975 I2C 3-axis electronic compass"
+	depends on ARCH_MSM && I2C
+	default n
+	help
+	  Say Y here if you want support for the Asahi Kasei AK8975 electonic
+	  compass.
 
-          To compile this driver as a module, choose M here: the
-          module will be called bma150_ng.
+config INPUT_APDS9702
+	tristate "APDS9702 proximity driver"
+	depends on I2C
+	default n
+	help
+	 If you say yes here you get support for the APDS9702 chip.
+	 This is used as a proximity sensor.
+
+config INPUT_BMA150_NG
+	tristate "Bosch BMA150 accelerometer (next gen)"
+	default n
+	depends on I2C && ! INPUT_BMA150
+	help
+	  Say Y here if you want support for the BMA150 accelerometer
+	  device.
+
+	  This driver should not be selected together with the regular
+	  BMA150 driver. It does NOT support SPI like the old one.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bma150_ng.
 
 config INPUT_BMA150_NG_REG_ACCESS
-        bool "Enable debug fs access to registers"
-        default n
-        depends on INPUT_BMA150_NG && CONFIG_DEBUG_FS
-        help
-          Enables access to registers from debug fs
+	bool "Enable debug fs access to registers"
+	default n
+	depends on INPUT_BMA150_NG && CONFIG_DEBUG_FS
+	help
+	  Enables access to registers from debug fs
 
 config INPUT_BMA150_RATE_MSEC
-        int "Default delay between samples, in msecs"
-        default 33
-        depends on INPUT_BMA150_NG
-        help
-          Specifies the approximate delay between successive
-          measurements from the accelerometer.  The value
-          specified here is a default applied only when
-          platform data does not provide a per-device setting.
+	int "Default delay between samples, in msecs"
+	default 33
+	depends on INPUT_BMA150_NG
+	help
+	  Specifies the approximate delay between successive
+	  measurements from the accelerometer.  The value
+	  specified here is a default applied only when
+	  platform data does not provide a per-device setting.
 
+config INPUT_SIMPLE_REMOTE
+	bool "Simple Remote detection driver"
+	default n
+	select SIMPLE_REMOTE_PLATFORM
+	help
+	  Provides support for detecting 3.5mm audio jack, such as wired
+	  headset. Requires the hardware specific driver
+	  config SIMPLE_REMOTE_PLATFORM
+
+config INPUT_BMA250
+	tristate "Bosch BMA250 accelerometer"
+	default n
+	depends on I2C
+	help
+	  Say Y here if you want support for the BMA250 accelerometer
+	  device. This driver only supports I2C communication.
+
+config INPUT_BMP180
+	tristate "Bosch BMP180 pressure sensor"
+	default n
+	depends on I2C
+	help
+	  Say Y here if you want support for the BMP180 pressure
+	  device. This driver only supports I2C communication.
 endif

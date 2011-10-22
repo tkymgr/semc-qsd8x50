@@ -567,7 +567,6 @@ config ARCH_MSM
 	bool "Qualcomm MSM/QSD"
 	select ARCH_HAS_CPUFREQ
 	select GENERIC_GPIO
-	select HAVE_CLK
 	select GENERIC_TIME
 	select GENERIC_CLOCKEVENTS
 	select ARCH_WANT_OPTIONAL_GPIOLIB
@@ -1511,12 +1510,12 @@ source "drivers/cpuidle/Kconfig"
 endmenu
 
 config CPU_FREQ_MSM
-	bool
-	depends on CPU_FREQ && ARCH_MSM
-	default y
-	help
-	  This enables the CPUFreq driver for Qualcomm CPUs.
-	  If in doubt, say Y.
+        bool
+        depends on CPU_FREQ && ARCH_MSM
+        default y
+        help
+          This enables the CPUFreq driver for Qualcomm CPUs.
+          If in doubt, say Y.
 
 menu "Floating point emulation"
 

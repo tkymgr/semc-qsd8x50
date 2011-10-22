@@ -116,6 +116,9 @@ config SUSPEND_FREEZER
 
 	  Turning OFF this setting is NOT recommended! If in doubt, say Y.
 
+config HIBERNATION_NVS
+	bool
+
 config HAS_WAKELOCK
 	bool
 
@@ -186,6 +189,7 @@ endchoice
 config HIBERNATION
 	bool "Hibernation (aka 'suspend to disk')"
 	depends on PM && SWAP && ARCH_HIBERNATION_POSSIBLE
+	select HIBERNATION_NVS if HAS_IOMEM
 	---help---
 	  Enable the suspend to disk (STD) functionality, which is usually
 	  called "hibernation" in user interfaces.  STD checkpoints the
@@ -272,36 +276,22 @@ config APM_EMULATION
 	  anything, try disabling/enabling this option (or disabling/enabling
 	  APM in your BIOS).
 
-config NPA
-	bool "Node Power Architecture(NPA) support"
-	default n
-	help
-	  Enable support for Node Power Architecture for aggressive
-	  resource power management. NPA provides an interface for resources
-	  to export their parameters and clients to request a value. The
-	  resources have additional facility to aggreate requests, calculate
-	  the resultant value, apply the value and notify the clients of
-	  change in state.
+config PM_RUNTIME
+	bool "Run-time PM core functionality"
+	depends on PM
+	---help---
+	  Enable functionality allowing I/O devices to be put into energy-saving
+	  (low power) states at run time (or autosuspended) after a specified
+	  period of inactivity and woken up in response to a hardware-generated
+	  wake-up event or a driver's request.
 
-config NPA_LOG
-	bool "Node Power Architecture(NPA) logging support"
-	depends on NPA
+	  Hardware support is generally required for this functionality to work
+	  and the bus type drivers of the buses the devices are on are
+	  responsible for the actual handling of the autosuspend requests and
+	  wake-up events.
+
+config PM_OPS
+	bool
+	depends on PM_SLEEP || PM_RUNTIME
 	default y
-	help
-	  Enable logging support for NPA.
 
-config NPA_DEBUG
-	bool "Node Power Architecture(NPA) debug support"
-	depends on NPA
-	default n
-	help
-	  Exports functions that can debug or reset NPA internal
-	  data structures.
-
-config NPA_REMOTE
-	bool "Node Power Architecture(NPA) remoting"
-	depends on NPA
-	default n
-	help
-	  Enables Linux NPA clients to talk to NPA nodes across
-	  processor boundary.

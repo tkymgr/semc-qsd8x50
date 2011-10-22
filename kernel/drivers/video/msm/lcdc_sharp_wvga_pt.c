@@ -1,57 +1,18 @@
 /* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Code Aurora Forum nor
- *       the names of its contributors may be used to endorse or promote
- *       products derived from this software without specific prior written
- *       permission.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
  *
- * Alternatively, provided that this notice is retained in full, this software
- * may be relicensed by the recipient under the terms of the GNU General Public
- * License version 2 ("GPL") and only version 2, in which case the provisions of
- * the GPL apply INSTEAD OF those given above.  If the recipient relicenses the
- * software under the GPL, then the identification text in the MODULE_LICENSE
- * macro must be changed to reflect "GPLv2" instead of "Dual BSD/GPL".  Once a
- * recipient changes the license terms to the GPL, subsequent recipients shall
- * not relicense under alternate licensing terms, including the BSD or dual
- * BSD/GPL terms.  In addition, the following license statement immediately
- * below and between the words START and END shall also then apply when this
- * software is relicensed under the GPL:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * START
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 and only version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- * details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * END
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  *
  */
 
@@ -61,23 +22,28 @@
 #include <linux/mfd/pmic8058.h>
 #include <linux/pmic8058-pwm.h>
 #endif
+#ifdef CONFIG_SPI_QSD
+#include <linux/spi/spi.h>
+#endif
 #include <mach/gpio.h>
 #include "msm_fb.h"
 
-
+#ifdef CONFIG_SPI_QSD
+#define LCDC_SHARP_SPI_DEVICE_NAME	"lcdc_sharp_ls038y7dx01"
+static struct spi_device *lcdc_spi_client;
+#endif
 static int lcdc_sharp_panel_off(struct platform_device *pdev);
 
 #ifdef CONFIG_PMIC8058_PWM
 static struct pwm_device *bl_pwm;
 
-/* 50 Khz == 20000 ns period
- * divide 20000 ns to 15 levels
- * each level has 1333 ns
- */
-
-#define PWM_PERIOD 20000	/* ns, period of 50Khz */
+#define PWM_PERIOD	1000    /* us, period of 1Khz */
+#define DUTY_LEVEL	(PWM_PERIOD / BL_MAX)
 #endif
 
+#define BL_MAX		16
+
+#ifndef CONFIG_SPI_QSD
 static int spi_cs;
 static int spi_sclk;
 static int spi_mosi;
@@ -91,6 +57,7 @@ static unsigned char bit_shift[8] = { (1 << 7),	/* MSB */
 	(1 << 1),
 	(1 << 0)		               /* LSB */
 };
+#endif
 
 struct sharp_state_type {
 	boolean disp_initialized;
@@ -165,6 +132,7 @@ static struct sharp_spi_data init_sequence[] = {
 static struct sharp_state_type sharp_state = { 0 };
 static struct msm_panel_common_pdata *lcdc_sharp_pdata;
 
+#ifndef CONFIG_SPI_QSD
 static void sharp_spi_write_byte(u8 val)
 {
 	int i;
@@ -182,9 +150,34 @@ static void sharp_spi_write_byte(u8 val)
 		gpio_set_value(spi_sclk, 0);
 	}
 }
+#endif
 
-static void serigo(u8 reg, u8 data)
+static int serigo(u8 reg, u8 data)
 {
+#ifdef CONFIG_SPI_QSD
+	char                tx_buf[2];
+	int                 rc;
+	struct spi_message  m;
+	struct spi_transfer t;
+
+	if (!lcdc_spi_client) {
+		printk(KERN_ERR "%s lcdc_spi_client is NULL\n", __func__);
+		return -EINVAL;
+	}
+
+	memset(&t, 0, sizeof t);
+	t.tx_buf = tx_buf;
+	spi_setup(lcdc_spi_client);
+	spi_message_init(&m);
+	spi_message_add_tail(&t, &m);
+
+	tx_buf[0] = reg;
+	tx_buf[1] = data;
+	t.rx_buf = NULL;
+	t.len = 2;
+	rc = spi_sync(lcdc_spi_client, &m);
+	return rc;
+#else
 	/* Enable the Chip Select - low */
 	gpio_set_value(spi_cs, 0);
 	udelay(1);
@@ -199,8 +192,11 @@ static void serigo(u8 reg, u8 data)
 
 	gpio_set_value(spi_mosi, 0);
 	gpio_set_value(spi_cs, 1);
+	return 0;
+#endif
 }
 
+#ifndef CONFIG_SPI_QSD
 static void sharp_spi_init(void)
 {
 	spi_sclk = *(lcdc_sharp_pdata->gpio_num);
@@ -215,6 +211,7 @@ static void sharp_spi_init(void)
 	/* Set the Chip Select deasserted (active low) */
 	gpio_set_value(spi_cs, 1);
 }
+#endif
 
 static void sharp_disp_powerup(void)
 {
@@ -244,8 +241,10 @@ static void sharp_disp_on(void)
 static int lcdc_sharp_panel_on(struct platform_device *pdev)
 {
 	if (!sharp_state.disp_initialized) {
+#ifndef CONFIG_SPI_QSD
 		lcdc_sharp_pdata->panel_config_gpio(1);
 		sharp_spi_init();
+#endif
 		sharp_disp_powerup();
 		sharp_disp_on();
 		sharp_state.disp_initialized = TRUE;
@@ -261,7 +260,7 @@ static int lcdc_sharp_panel_off(struct platform_device *pdev)
 		serigo(31, 0xC1);
 		mdelay(40);
 		serigo(31, 0x00);
-		mdelay(100);
+		msleep(16);
 		sharp_state.display_on = FALSE;
 		sharp_state.disp_initialized = FALSE;
 	}
@@ -276,9 +275,7 @@ static void lcdc_sharp_panel_set_backlight(struct msm_fb_data_type *mfd)
 
 #ifdef CONFIG_PMIC8058_PWM
 	if (bl_pwm) {
-		int duty_level;
-		duty_level = (PWM_PERIOD / mfd->panel_info.bl_max);
-		pwm_config(bl_pwm, duty_level * bl_level, PWM_PERIOD);
+		pwm_config(bl_pwm, DUTY_LEVEL * bl_level, PWM_PERIOD);
 		pwm_enable(bl_pwm);
 	}
 #endif
@@ -307,6 +304,27 @@ static int __init sharp_probe(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_SPI_QSD
+static int __devinit lcdc_sharp_spi_probe(struct spi_device *spi)
+{
+	lcdc_spi_client = spi;
+	lcdc_spi_client->bits_per_word = 32;
+	return 0;
+}
+static int __devexit lcdc_sharp_spi_remove(struct spi_device *spi)
+{
+	lcdc_spi_client = NULL;
+	return 0;
+}
+static struct spi_driver lcdc_sharp_spi_driver = {
+	.driver = {
+		.name  = LCDC_SHARP_SPI_DEVICE_NAME,
+		.owner = THIS_MODULE,
+	},
+	.probe         = lcdc_sharp_spi_probe,
+	.remove        = __devexit_p(lcdc_sharp_spi_remove),
+};
+#endif
 static struct platform_driver this_driver = {
 	.probe  = sharp_probe,
 	.driver = {
@@ -351,7 +369,7 @@ static int __init lcdc_sharp_panel_init(void)
 	pinfo->bpp = 18;
 	pinfo->fb_num = 2;
 	pinfo->clk_rate = 24500000;
-	pinfo->bl_max = 15;
+	pinfo->bl_max = BL_MAX;
 	pinfo->bl_min = 1;
 
 	pinfo->lcdc.h_back_porch = 20;
@@ -365,10 +383,36 @@ static int __init lcdc_sharp_panel_init(void)
 	pinfo->lcdc.hsync_skew = 0;
 
 	ret = platform_device_register(&this_device);
-	if (ret)
+	if (ret) {
+		printk(KERN_ERR "%s not able to register the device\n",
+			__func__);
+		goto fail_driver;
+	}
+#ifdef CONFIG_SPI_QSD
+	ret = spi_register_driver(&lcdc_sharp_spi_driver);
+
+	if (ret) {
+		printk(KERN_ERR "%s not able to register spi\n", __func__);
+		goto fail_device;
+	}
+#endif
+	return ret;
+#ifdef CONFIG_SPI_QSD
+fail_device:
+	platform_device_unregister(&this_device);
+#endif
+fail_driver:
 		platform_driver_unregister(&this_driver);
 
 	return ret;
 }
 
 module_init(lcdc_sharp_panel_init);
+#ifdef CONFIG_SPI_QSD
+static void __exit lcdc_sharp_panel_exit(void)
+{
+	spi_unregister_driver(&lcdc_sharp_spi_driver);
+}
+module_exit(lcdc_sharp_panel_exit);
+#endif
+

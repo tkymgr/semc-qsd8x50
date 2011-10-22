@@ -169,150 +169,6 @@ void end_buffer_write_sync(struct buffer_head *bh, int uptodate)
 	put_bh(bh);
 }
 EXPORT_SYMBOL(end_buffer_write_sync);
-/*
- * Write out and wait upon all the dirty data associated with a block
- * device via its mapping.  Does not take the superblock lock.
- */
-int sync_blockdev(struct block_device *bdev)
-{
-	int ret = 0;
-
-	if (bdev)
-		ret = filemap_write_and_wait(bdev->bd_inode->i_mapping);
-	return ret;
-}
-EXPORT_SYMBOL(sync_blockdev);
-
-/*
- * Write out and wait upon all dirty data associated with this
- * device.   Filesystem data as well as the underlying block
- * device.  Takes the superblock lock.
- */
-int fsync_bdev(struct block_device *bdev)
-{
-	struct super_block *sb = get_super(bdev);
-	if (sb) {
-		int res = fsync_super(sb);
-		drop_super(sb);
-		return res;
-	}
-	return sync_blockdev(bdev);
-}
-
-/**
- * freeze_bdev  --  lock a filesystem and force it into a consistent state
- * @bdev:	blockdevice to lock
- *
- * This takes the block device bd_mount_sem to make sure no new mounts
- * happen on bdev until thaw_bdev() is called.
- * If a superblock is found on this device, we take the s_umount semaphore
- * on it to make sure nobody unmounts until the snapshot creation is done.
- * The reference counter (bd_fsfreeze_count) guarantees that only the last
- * unfreeze process can unfreeze the frozen filesystem actually when multiple
- * freeze requests arrive simultaneously. It counts up in freeze_bdev() and
- * count down in thaw_bdev(). When it becomes 0, thaw_bdev() will unfreeze
- * actually.
- */
-struct super_block *freeze_bdev(struct block_device *bdev)
-{
-	struct super_block *sb;
-	int error = 0;
-
-	mutex_lock(&bdev->bd_fsfreeze_mutex);
-	if (bdev->bd_fsfreeze_count > 0) {
-		bdev->bd_fsfreeze_count++;
-		sb = get_super(bdev);
-		mutex_unlock(&bdev->bd_fsfreeze_mutex);
-		return sb;
-	}
-	bdev->bd_fsfreeze_count++;
-
-	down(&bdev->bd_mount_sem);
-	sb = get_super(bdev);
-	if (sb && !(sb->s_flags & MS_RDONLY)) {
-		sb->s_frozen = SB_FREEZE_WRITE;
-		smp_wmb();
-
-		__fsync_super(sb);
-
-		sb->s_frozen = SB_FREEZE_TRANS;
-		smp_wmb();
-
-		sync_blockdev(sb->s_bdev);
-
-		if (sb->s_op->freeze_fs) {
-			error = sb->s_op->freeze_fs(sb);
-			if (error) {
-				printk(KERN_ERR
-					"VFS:Filesystem freeze failed\n");
-				sb->s_frozen = SB_UNFROZEN;
-				drop_super(sb);
-				up(&bdev->bd_mount_sem);
-				bdev->bd_fsfreeze_count--;
-				mutex_unlock(&bdev->bd_fsfreeze_mutex);
-				return ERR_PTR(error);
-			}
-		}
-	}
-
-	sync_blockdev(bdev);
-	mutex_unlock(&bdev->bd_fsfreeze_mutex);
-
-	return sb;	/* thaw_bdev releases s->s_umount and bd_mount_sem */
-}
-EXPORT_SYMBOL(freeze_bdev);
-
-/**
- * thaw_bdev  -- unlock filesystem
- * @bdev:	blockdevice to unlock
- * @sb:		associated superblock
- *
- * Unlocks the filesystem and marks it writeable again after freeze_bdev().
- */
-int thaw_bdev(struct block_device *bdev, struct super_block *sb)
-{
-	int error = 0;
-
-	mutex_lock(&bdev->bd_fsfreeze_mutex);
-	if (!bdev->bd_fsfreeze_count) {
-		mutex_unlock(&bdev->bd_fsfreeze_mutex);
-		return -EINVAL;
-	}
-
-	bdev->bd_fsfreeze_count--;
-	if (bdev->bd_fsfreeze_count > 0) {
-		if (sb)
-			drop_super(sb);
-		mutex_unlock(&bdev->bd_fsfreeze_mutex);
-		return 0;
-	}
-
-	if (sb) {
-		BUG_ON(sb->s_bdev != bdev);
-		if (!(sb->s_flags & MS_RDONLY)) {
-			if (sb->s_op->unfreeze_fs) {
-				error = sb->s_op->unfreeze_fs(sb);
-				if (error) {
-					printk(KERN_ERR
-						"VFS:Filesystem thaw failed\n");
-					sb->s_frozen = SB_FREEZE_TRANS;
-					bdev->bd_fsfreeze_count++;
-					mutex_unlock(&bdev->bd_fsfreeze_mutex);
-					return error;
-				}
-			}
-			sb->s_frozen = SB_UNFROZEN;
-			smp_wmb();
-			wake_up(&sb->s_wait_unfrozen);
-		}
-		drop_super(sb);
-	}
-
-	up(&bdev->bd_mount_sem);
-	mutex_unlock(&bdev->bd_fsfreeze_mutex);
-	return 0;
-}
-EXPORT_SYMBOL(thaw_bdev);
 
 /*
  * Various filesystems appear to want __find_get_block to be non-blocking.
@@ -348,13 +204,13 @@ __find_get_block_slow(struct block_device *bdev, sector_t block)
 	head = page_buffers(page);
 	bh = head;
 	do {
-		if (bh->b_blocknr == block) {
+		if (!buffer_mapped(bh))
+			all_mapped = 0;
+		else if (bh->b_blocknr == block) {
 			ret = bh;
 			get_bh(bh);
 			goto out_unlock;
 		}
-		if (!buffer_mapped(bh))
-			all_mapped = 0;
 		bh = bh->b_this_page;
 	} while (bh != head);
 
@@ -431,7 +287,7 @@ static void free_more_memory(void)
 	struct zone *zone;
 	int nid;
 
-	wakeup_pdflush(1024);
+	wakeup_flusher_threads(1024);
 	yield();
 
 	for_each_online_node(nid) {
@@ -440,7 +296,7 @@ static void free_more_memory(void)
 						&zone);
 		if (zone)
 			try_to_free_pages(node_zonelist(nid, GFP_NOFS), 0,
-						GFP_NOFS);
+						GFP_NOFS, NULL);
 	}
 }
 
@@ -598,8 +454,7 @@ static void mark_buffer_async_write_endio(struct buffer_head *bh,
 
 void mark_buffer_async_write(struct buffer_head *bh)
 {
-	bh->b_end_io = end_buffer_async_write;
-	set_buffer_async_write(bh);
+	mark_buffer_async_write_endio(bh, end_buffer_async_write);
 }
 EXPORT_SYMBOL(mark_buffer_async_write);
 
@@ -819,14 +674,7 @@ static void __set_page_dirty(struct page *page,
 	spin_lock_irq(&mapping->tree_lock);
 	if (page->mapping) {	/* Race with truncate? */
 		WARN_ON_ONCE(warn && !PageUptodate(page));
-
-		if (mapping_cap_account_dirty(mapping)) {
-			__inc_zone_page_state(page, NR_FILE_DIRTY);
-			__inc_bdi_stat(mapping->backing_dev_info,
-					BDI_RECLAIMABLE);
-			task_dirty_inc(current);
-			task_io_account_write(PAGE_CACHE_SIZE);
-		}
+		account_page_dirtied(page, mapping);
 		radix_tree_tag_set(&mapping->page_tree,
 				page_index(page), PAGECACHE_TAG_DIRTY);
 	}
@@ -909,7 +757,7 @@ static int fsync_buffers_list(spinlock_t *lock, struct list_head *list)
 {
 	struct buffer_head *bh;
 	struct list_head tmp;
-	struct address_space *mapping;
+	struct address_space *mapping, *prev_mapping = NULL;
 	int err = 0, err2;
 
 	INIT_LIST_HEAD(&tmp);
@@ -934,7 +782,18 @@ static int fsync_buffers_list(spinlock_t *lock, struct list_head *list)
 				 * contents - it is a noop if I/O is still in
 				 * flight on potentially older contents.
 				 */
-				ll_rw_block(SWRITE_SYNC, 1, &bh);
+				ll_rw_block(SWRITE_SYNC_PLUG, 1, &bh);
+
+				/*
+				 * Kick off IO for the previous mapping. Note
+				 * that we will not run the very last mapping,
+				 * wait_on_buffer() will do that for us
+				 * through sync_buffer().
+				 */
+				if (prev_mapping && prev_mapping != mapping)
+					blk_run_address_space(prev_mapping);
+				prev_mapping = mapping;
+
 				brelse(bh);
 				spin_lock(lock);
 			}
@@ -1233,12 +1092,12 @@ static struct buffer_head *
 __getblk_slow(struct block_device *bdev, sector_t block, int size)
 {
 	/* Size must be multiple of hard sectorsize */
-	if (unlikely(size & (bdev_hardsect_size(bdev)-1) ||
+	if (unlikely(size & (bdev_logical_block_size(bdev)-1) ||
 			(size < 512 || size > PAGE_SIZE))) {
 		printk(KERN_ERR "getblk(): invalid block size %d requested\n",
 					size);
-		printk(KERN_ERR "hardsect size: %d\n",
-					bdev_hardsect_size(bdev));
+		printk(KERN_ERR "logical block size: %d\n",
+					bdev_logical_block_size(bdev));
 
 		dump_stack();
 		return NULL;
@@ -1313,8 +1172,11 @@ void mark_buffer_dirty(struct buffer_head *bh)
 
 	if (!test_set_buffer_dirty(bh)) {
 		struct page *page = bh->b_page;
-		if (!TestSetPageDirty(page))
-			__set_page_dirty(page, page_mapping(page), 0);
+		if (!TestSetPageDirty(page)) {
+			struct address_space *mapping = page_mapping(page);
+			if (mapping)
+				__set_page_dirty(page, mapping, 0);
+		}
 	}
 }
 EXPORT_SYMBOL(mark_buffer_dirty);
@@ -1772,7 +1634,8 @@ EXPORT_SYMBOL(unmap_underlying_metadata);
  * unplugging the device queue.
  */
 static int __block_write_full_page(struct inode *inode, struct page *page,
-			get_block_t *get_block, struct writeback_control *wbc)
+			get_block_t *get_block, struct writeback_control *wbc,
+			bh_end_io_t *handler)
 {
 	int err;
 	sector_t block;
@@ -1780,6 +1643,8 @@ static int __block_write_full_page(struct inode *inode, struct page *page,
 	struct buffer_head *bh, *head;
 	const unsigned blocksize = 1 << inode->i_blkbits;
 	int nr_underway = 0;
+	int write_op = (wbc->sync_mode == WB_SYNC_ALL ?
+			WRITE_SYNC_PLUG : WRITE);
 
 	BUG_ON(!PageLocked(page));
 
@@ -1855,7 +1720,7 @@ static int __block_write_full_page(struct inode *inode, struct page *page,
 			continue;
 		}
 		if (test_clear_buffer_dirty(bh)) {
-			mark_buffer_async_write(bh);
+			mark_buffer_async_write_endio(bh, handler);
 		} else {
 			unlock_buffer(bh);
 		}
@@ -1871,7 +1736,7 @@ static int __block_write_full_page(struct inode *inode, struct page *page,
 	do {
 		struct buffer_head *next = bh->b_this_page;
 		if (buffer_async_write(bh)) {
-			submit_bh(WRITE, bh);
+			submit_bh(write_op, bh);
 			nr_underway++;
 		}
 		bh = next;
@@ -1908,7 +1773,7 @@ recover:
 		if (buffer_mapped(bh) && buffer_dirty(bh) &&
 		    !buffer_delay(bh)) {
 			lock_buffer(bh);
-			mark_buffer_async_write(bh);
+			mark_buffer_async_write_endio(bh, handler);
 		} else {
 			/*
 			 * The buffer may have been set dirty during
@@ -1925,7 +1790,7 @@ recover:
 		struct buffer_head *next = bh->b_this_page;
 		if (buffer_async_write(bh)) {
 			clear_buffer_dirty(bh);
-			submit_bh(WRITE, bh);
+			submit_bh(write_op, bh);
 			nr_underway++;
 		}
 		bh = next;
@@ -2374,16 +2239,10 @@ int generic_cont_expand_simple(struct inode *inode, loff_t size)
 	struct address_space *mapping = inode->i_mapping;
 	struct page *page;
 	void *fsdata;
-	unsigned long limit;
 	int err;
 
-	err = -EFBIG;
-        limit = current->signal->rlim[RLIMIT_FSIZE].rlim_cur;
-	if (limit != RLIM_INFINITY && size > (loff_t)limit) {
-		send_sig(SIGXFSZ, current, 0);
-		goto out;
-	}
-	if (size > inode->i_sb->s_maxbytes)
+	err = inode_newsize_ok(inode, size);
+	if (err)
 		goto out;
 
 	err = pagecache_write_begin(NULL, mapping, size, 0,
@@ -2536,20 +2395,22 @@ EXPORT_SYMBOL(block_commit_write);
  * unlock the page.
  */
 int
-block_page_mkwrite(struct vm_area_struct *vma, struct page *page,
+block_page_mkwrite(struct vm_area_struct *vma, struct vm_fault *vmf,
 		   get_block_t get_block)
 {
+	struct page *page = vmf->page;
 	struct inode *inode = vma->vm_file->f_path.dentry->d_inode;
 	unsigned long end;
 	loff_t size;
-	int ret = -EINVAL;
+	int ret = VM_FAULT_NOPAGE; /* make the VM retry the fault */
 
 	lock_page(page);
 	size = i_size_read(inode);
 	if ((page->mapping != inode->i_mapping) ||
 	    (page_offset(page) > size)) {
 		/* page got truncated out from underneath us */
-		goto out_unlock;
+		unlock_page(page);
+		goto out;
 	}
 
 	/* page is wholly or partially inside EOF */
@@ -2562,8 +2423,16 @@ block_page_mkwrite(struct vm_area_struct *vma, struct page *page,
 	if (!ret)
 		ret = block_commit_write(page, 0, end);
 
-out_unlock:
-	unlock_page(page);
+	if (unlikely(ret)) {
+		unlock_page(page);
+		if (ret == -ENOMEM)
+			ret = VM_FAULT_OOM;
+		else /* -ENOSPC, -EIO, etc */
+			ret = VM_FAULT_SIGBUS;
+	} else
+		ret = VM_FAULT_LOCKED;
+
+out:
 	return ret;
 }
 EXPORT_SYMBOL(block_page_mkwrite);
@@ -2832,7 +2701,8 @@ int nobh_writepage(struct page *page, get_block_t *get_block,
 out:
 	ret = mpage_writepage(page, get_block, wbc);
 	if (ret == -EAGAIN)
-		ret = __block_write_full_page(inode, page, get_block, wbc);
+		ret = __block_write_full_page(inode, page, get_block, wbc,
+					      end_buffer_async_write);
 	return ret;
 }
 EXPORT_SYMBOL(nobh_writepage);
@@ -2879,6 +2749,8 @@ has_buffers:
 		pos += blocksize;
 	}
 
+	map_bh.b_size = blocksize;
+	map_bh.b_state = 0;
 	err = get_block(inode, iblock, &map_bh, 0);
 	if (err)
 		goto unlock;
@@ -2993,8 +2865,8 @@ EXPORT_SYMBOL(block_truncate_page);
  * The generic ->writepage function for buffer-backed address_spaces
  * this form passes in the end_io handler used to finish the IO.
  */
-int block_write_full_page(struct page *page, get_block_t *get_block,
-			struct writeback_control *wbc)
+int block_write_full_page_endio(struct page *page, get_block_t *get_block,
+			struct writeback_control *wbc, bh_end_io_t *handler)
 {
 	struct inode * const inode = page->mapping->host;
 	loff_t i_size = i_size_read(inode);
@@ -3003,7 +2875,8 @@ int block_write_full_page(struct page *page, get_block_t *get_block,
 
 	/* Is the page fully inside i_size? */
 	if (page->index < end_index)
-		return __block_write_full_page(inode, page, get_block, wbc);
+		return __block_write_full_page(inode, page, get_block, wbc,
+					       handler);
 
 	/* Is the page fully outside i_size? (truncate in progress) */
 	offset = i_size & (PAGE_CACHE_SIZE-1);
@@ -3026,7 +2899,18 @@ int block_write_full_page(struct page *page, get_block_t *get_block,
 	 * writes to that region are not written out to the file."
 	 */
 	zero_user_segment(page, offset, PAGE_CACHE_SIZE);
-	return __block_write_full_page(inode, page, get_block, wbc);
+	return __block_write_full_page(inode, page, get_block, wbc, handler);
+}
+EXPORT_SYMBOL(block_write_full_page_endio);
+
+/*
+ * The generic ->writepage function for buffer-backed address_spaces
+ */
+int block_write_full_page(struct page *page, get_block_t *get_block,
+			struct writeback_control *wbc)
+{
+	return block_write_full_page_endio(page, get_block, wbc,
+					   end_buffer_async_write);
 }
 EXPORT_SYMBOL(block_write_full_page);
 
@@ -3146,12 +3030,13 @@ void ll_rw_block(int rw, int nr, struct buffer_head *bhs[])
 	for (i = 0; i < nr; i++) {
 		struct buffer_head *bh = bhs[i];
 
-		if (rw == SWRITE || rw == SWRITE_SYNC)
+		if (rw == SWRITE || rw == SWRITE_SYNC || rw == SWRITE_SYNC_PLUG)
 			lock_buffer(bh);
 		else if (!trylock_buffer(bh))
 			continue;
 
-		if (rw == WRITE || rw == SWRITE || rw == SWRITE_SYNC) {
+		if (rw == WRITE || rw == SWRITE || rw == SWRITE_SYNC ||
+		    rw == SWRITE_SYNC_PLUG) {
 			if (test_clear_buffer_dirty(bh)) {
 				bh->b_end_io = end_buffer_write_sync;
 				get_bh(bh);
@@ -3188,7 +3073,7 @@ int sync_dirty_buffer(struct buffer_head *bh)
 	if (test_clear_buffer_dirty(bh)) {
 		get_bh(bh);
 		bh->b_end_io = end_buffer_write_sync;
-		ret = submit_bh(WRITE, bh);
+		ret = submit_bh(WRITE_SYNC, bh);
 		wait_on_buffer(bh);
 		if (buffer_eopnotsupp(bh)) {
 			clear_buffer_eopnotsupp(bh);
@@ -3493,6 +3378,3 @@ void __init buffer_init(void)
 	max_buffer_heads = nrpages * (PAGE_SIZE / sizeof(struct buffer_head));
 	hotcpu_notifier(buffer_cpu_notify, 0);
 }
-
-EXPORT_SYMBOL(file_fsync);
-EXPORT_SYMBOL(fsync_bdev);

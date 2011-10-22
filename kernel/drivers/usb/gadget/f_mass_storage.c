@@ -71,11 +71,16 @@
 #include <linux/wakelock.h>
 #include <linux/platform_device.h>
 
+#include <linux/usb.h>
 #include <linux/usb_usual.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/android_composite.h>
 
 #include "gadget_chips.h"
+
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+#include "marlin_scsi_ext.h"
+#endif
 
 #define BULK_BUFFER_SIZE           16384
 
@@ -133,7 +138,9 @@ static const char shortname[] = DRIVER_NAME;
 #define INFO(d, fmt, args...) \
 	dev_info(&(d)->cdev->gadget->dev , fmt , ## args)
 
-
+#ifdef CONFIG_USB_CSW_HACK
+static int write_error_after_csw_sent;
+#endif
 /*-------------------------------------------------------------------------*/
 
 /* SCSI device types */
@@ -141,7 +148,7 @@ static const char shortname[] = DRIVER_NAME;
 #define TYPE_CDROM	0x05
 
 /* CD_ROM constants */
-#define MAX_2048_SECTORS	256*60*75
+#define MAX_2048_SECTORS	(256*60*75)
 #define MIN_2048_SECTORS	300 /* Smallest track is 300 frames */
 
 /* Function type */
@@ -213,6 +220,10 @@ struct bulk_cs_wrap {
 #define SC_WRITE_6			0x0a
 #define SC_WRITE_10			0x2a
 #define SC_WRITE_12			0xaa
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+#define SC_SEND_KEY			0xa3
+#define SC_REPORT_KEY			0xa4
+#endif
 
 /* SCSI Sense Key/Additional Sense Code/ASC Qualifier values */
 #define SS_NO_SENSE				0
@@ -247,8 +258,8 @@ struct lun {
 	unsigned int	registered : 1;
 	unsigned int	info_valid : 1;
 
-	unsigned int	shift_size;
 	bool		is_cdrom;
+	unsigned int	shift_size;
 	bool		can_stall;
 	char		*vendor;
 	char		*product;
@@ -271,7 +282,6 @@ static struct lun *dev_to_lun(struct device *dev)
 
 /* Big enough to hold our biggest descriptor */
 #define EP0_BUFSIZE	256
-#define DELAYED_STATUS	(EP0_BUFSIZE + 999)	/* An impossibly large value */
 
 /* Number of buffers for CBW, DATA and CSW */
 #ifdef CONFIG_USB_CSW_HACK
@@ -648,7 +658,6 @@ static void bulk_in_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct fsg_dev		*fsg = ep->driver_data;
 	struct fsg_buffhd	*bh = req->context;
-	unsigned long flags;
 
 	if (req->status || req->actual != req->length)
 		DBG(fsg, "%s --> %d, %u/%u\n", __func__,
@@ -656,18 +665,17 @@ static void bulk_in_complete(struct usb_ep *ep, struct usb_request *req)
 
 	/* Hold the lock while we update the request and buffer states */
 	smp_wmb();
-	spin_lock_irqsave(&fsg->lock, flags);
+	spin_lock(&fsg->lock);
 	bh->inreq_busy = 0;
 	bh->state = BUF_STATE_EMPTY;
 	wakeup_thread(fsg);
-	spin_unlock_irqrestore(&fsg->lock, flags);
+	spin_unlock(&fsg->lock);
 }
 
 static void bulk_out_complete(struct usb_ep *ep, struct usb_request *req)
 {
 	struct fsg_dev		*fsg = ep->driver_data;
 	struct fsg_buffhd	*bh = req->context;
-	unsigned long flags;
 
 	dump_msg(fsg, "bulk-out", req->buf, req->actual);
 	if (req->status || req->actual != bh->bulk_out_intended_length)
@@ -677,11 +685,11 @@ static void bulk_out_complete(struct usb_ep *ep, struct usb_request *req)
 
 	/* Hold the lock while we update the request and buffer states */
 	smp_wmb();
-	spin_lock_irqsave(&fsg->lock, flags);
+	spin_lock(&fsg->lock);
 	bh->outreq_busy = 0;
 	bh->state = BUF_STATE_FULL;
 	wakeup_thread(fsg);
-	spin_unlock_irqrestore(&fsg->lock, flags);
+	spin_unlock(&fsg->lock);
 }
 
 static int fsg_function_setup(struct usb_function *f,
@@ -689,15 +697,13 @@ static int fsg_function_setup(struct usb_function *f,
 {
 	struct fsg_dev	*fsg = func_to_dev(f);
 	struct usb_composite_dev *cdev = fsg->cdev;
-	struct usb_request	*req = cdev->req;
 	int			value = -EOPNOTSUPP;
 	u16			w_index = le16_to_cpu(ctrl->wIndex);
 	u16			w_value = le16_to_cpu(ctrl->wValue);
 	u16			w_length = le16_to_cpu(ctrl->wLength);
 
 	DBG(fsg, "fsg_function_setup\n");
-	if (w_index != intf_desc.bInterfaceNumber)
-		return value;
+
 	/* Handle Bulk-only class-specific requests */
 	if ((ctrl->bRequestType & USB_TYPE_MASK) == USB_TYPE_CLASS) {
 	DBG(fsg, "USB_TYPE_CLASS\n");
@@ -714,6 +720,7 @@ static int fsg_function_setup(struct usb_function *f,
 			/* Raise an exception to stop the current operation
 			 * and reinitialize our state. */
 			DBG(fsg, "bulk reset request\n");
+			raise_exception(fsg, FSG_STATE_RESET);
 			value = 0;
 			break;
 
@@ -732,18 +739,22 @@ static int fsg_function_setup(struct usb_function *f,
 		}
 	}
 
+		/* respond with data transfer or status phase? */
+		if (value >= 0) {
+			int rc;
+			cdev->req->zero = value < w_length;
+			cdev->req->length = value;
+			rc = usb_ep_queue(cdev->gadget->ep0, cdev->req, GFP_ATOMIC);
+			if (rc < 0)
+				printk("%s setup response queue error\n", __func__);
+		}
+
 	if (value == -EOPNOTSUPP)
 		VDBG(fsg,
 			"unknown class-specific control req "
 			"%02x.%02x v%04x i%04x l%u\n",
 			ctrl->bRequestType, ctrl->bRequest,
 			le16_to_cpu(ctrl->wValue), w_index, w_length);
-	if (value >= 0) {
-		req->length = value;
-		value = usb_ep_queue(cdev->gadget->ep0, req, GFP_ATOMIC);
-		if (value < 0)
-			req->status = 0;
-	}
 	return value;
 }
 
@@ -808,6 +819,59 @@ static int sleep_thread(struct fsg_dev *fsg)
 
 
 /*-------------------------------------------------------------------------*/
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+static int do_send_key(struct fsg_dev *fsg)
+{
+	int len, rc;
+	struct lun *curlun = fsg->curlun;
+	struct fsg_buffhd *bh = fsg->next_buffhd_to_fill;
+
+	if (fsg->data_size_from_cmnd > 0) {
+		fsg->usb_amount_left -= fsg->data_size_from_cmnd;
+		bh->outreq->length = fsg->data_size_from_cmnd;
+		bh->bulk_out_intended_length = fsg->data_size_from_cmnd;
+		start_transfer(fsg,
+				fsg->bulk_out,
+				bh->outreq,
+				&bh->outreq_busy,
+				&bh->state);
+		fsg->next_buffhd_to_fill = bh->next;
+		while (bh->state != BUF_STATE_FULL) {
+			rc = sleep_thread(fsg);
+			if (rc)
+				return 0;
+		}
+	}
+
+	len = mldd_do_send_key(fsg->cmnd_size,
+				fsg->cmnd,
+				fsg->data_size,
+				bh->buf,
+				&curlun->sense_data);
+	fsg->next_buffhd_to_drain = bh->next;
+	bh->state = BUF_STATE_EMPTY;
+	fsg->residue -= fsg->data_size_from_cmnd;
+
+	return len;
+}
+
+
+
+static int do_report_key(struct fsg_dev *fsg)
+{
+	int len;
+	struct fsg_buffhd *bh = fsg->next_buffhd_to_fill;
+	struct lun *curlun = fsg->curlun;
+
+	len = mldd_do_report_key(fsg->cmnd_size,
+					fsg->cmnd,
+					fsg->data_size_from_cmnd,
+					bh->buf,
+					&curlun->sense_data);
+
+	return len;
+}
+#endif
 
 static int do_read(struct fsg_dev *fsg)
 {
@@ -988,12 +1052,8 @@ static int do_write(struct fsg_dev *fsg)
 	file_offset = usb_offset = ((loff_t) lba) << curlun->shift_size;
 	amount_left_to_req = amount_left_to_write = fsg->data_size_from_cmnd;
 
-	if (random_write_count >= RANDOM_WRITE_COUNT_TO_BE_FLUSHED) {
-		down_read(&fsg->filesem);
-		/* Write cached data to physical device */
-		fsync_sub(fsg->curlun);
-		up_read(&fsg->filesem);
-	}
+	if (random_write_count >= RANDOM_WRITE_COUNT_TO_BE_FLUSHED)
+		fsync_sub(curlun);
 
 	/* Detect non-sequential write */
 	if (last_offset != file_offset)
@@ -1122,31 +1182,22 @@ static int do_write(struct fsg_dev *fsg)
 
 			/* If an error occurred, report it and its position */
 			if (nwritten < amount) {
-#ifdef CONFIG_USB_CSW_HACK
-				/*
-				 * If csw is already sent & write failure
-				 * occured, then detach the storage media
-				 * from the corresponding lun, and cable must
-				 * be disconnected to recover fom this error.
-				 */
-				if (csw_hack_sent) {
-					if (backing_file_is_open(curlun)) {
-						close_backing_file(fsg, curlun);
-						curlun->unit_attention_data =
-							SS_MEDIUM_NOT_PRESENT;
-					}
-					break;
-				}
-#endif
 				curlun->sense_data = SS_WRITE_ERROR;
 				curlun->sense_data_info = file_offset >>
 							curlun->shift_size;
 				curlun->info_valid = 1;
+#ifdef CONFIG_USB_CSW_HACK
+				write_error_after_csw_sent = 1;
+				goto write_error;
+#endif
 				break;
 			}
 
 #ifdef CONFIG_USB_CSW_HACK
+write_error:
 			if ((nwritten == amount) && !csw_hack_sent) {
+				if (write_error_after_csw_sent)
+					break;
 				/*
 				 * Check if any of the buffer is in the
 				 * busy state, if any buffer is in busy state,
@@ -1366,10 +1417,11 @@ static int do_inquiry(struct fsg_dev *fsg, struct fsg_buffhd *bh)
 	}
 
 	memset(buf, 0, 8);	/* Non-removable, direct-access device */
-	buf[0] = fsg->curlun->is_cdrom ? TYPE_CDROM : TYPE_DISK;
 	if (fsg->curlun->is_cdrom) {
+		buf[0] = TYPE_CDROM;
 		buf[1] = 0;
 	} else {
+		buf[0] = TYPE_DISK;
 		buf[1] = 0x80;	/* set removable bit */
 	}
 	buf[2] = 2;		/* ANSI SCSI level 2 */
@@ -1452,38 +1504,37 @@ static int do_read_capacity(struct fsg_dev *fsg, struct fsg_buffhd *bh)
 
 	put_be32(&buf[0], curlun->num_sectors - 1);	/* Max logical block */
 	put_be32(&buf[4], 1 << curlun->shift_size);	/* Set block length */
-
 	return 8;
 }
 
 static void store_cdrom_address(u8 *dest, int msf, u32 addr)
 {
-	 if (msf) {
-		 /* Convert to Minutes-Seconds-Frames */
-		addr >>= 2;             /* Convert to 2048-byte frames */
-		addr += 2*75;           /* Lead-in occupies 2 seconds */
-		dest[3] = addr % 75;    /* Frames */
+	if (msf) {
+		/* Convert to Minutes-Seconds-Frames */
+		addr >>= 2;		/* Convert to 2048-byte frames */
+		addr += 2*75;		/* Lead-in occupies 2 seconds */
+		dest[3] = addr % 75;	/* Frames */
 		addr /= 75;
-		dest[2] = addr % 60;    /* Seconds */
+		dest[2] = addr % 60;	/* Seconds */
 		addr /= 60;
-		dest[1] = addr;         /* Minutes */
-		dest[0] = 0;    /* Reserved */
+		dest[1] = addr;		/* Minutes */
+		dest[0] = 0;		/* Reserved */
 	} else {
 		/* Absolute sector */
-                put_be32(dest, addr);
+		put_be32(dest, addr);
 	}
 }
 
 static int do_read_header(struct fsg_dev *fsg, struct fsg_buffhd *bh)
 {
-	struct lun      *curlun = fsg->curlun;
-	int             msf = fsg->cmnd[1] & 0x02;
-	u32             lba = get_be32(&fsg->cmnd[2]);
-	u8              *buf = (u8 *) bh->buf;
+	struct lun *curlun = fsg->curlun;
+	int msf = fsg->cmnd[1] & 0x02;
+	u32 lba = get_be32(&fsg->cmnd[2]);
+	u8 *buf = (u8 *) bh->buf;
 
-	if ((fsg->cmnd[1] & ~0x02) != 0) {              /* Mask away MSF */
-	        curlun->sense_data = SS_INVALID_FIELD_IN_CDB;
-	        return -EINVAL;
+	if ((fsg->cmnd[1] & ~0x02) != 0) {	/* Mask away MSF */
+		curlun->sense_data = SS_INVALID_FIELD_IN_CDB;
+		return -EINVAL;
 	}
 	if (lba >= curlun->num_sectors) {
 		curlun->sense_data = SS_LOGICAL_BLOCK_ADDRESS_OUT_OF_RANGE;
@@ -1491,34 +1542,34 @@ static int do_read_header(struct fsg_dev *fsg, struct fsg_buffhd *bh)
 	}
 
 	memset(buf, 0, 8);
-	buf[0] = 0x01;          /* 2048 bytes of user data, rest is EC */
+	buf[0] = 0x01;	/* 2048 bytes of user data, rest is EC */
 	store_cdrom_address(&buf[4], msf, lba);
 	return 8;
 }
 
 static int do_read_toc(struct fsg_dev *fsg, struct fsg_buffhd *bh)
 {
-	struct lun      *curlun = fsg->curlun;
-	int             msf = fsg->cmnd[1] & 0x02;
-	int             start_track = fsg->cmnd[6];
-	u8              *buf = (u8 *) bh->buf;
+	struct lun *curlun = fsg->curlun;
+	int msf = fsg->cmnd[1] & 0x02;
+	int start_track = fsg->cmnd[6];
+	u8 *buf = (u8 *) bh->buf;
 
-	if ((fsg->cmnd[1] & ~0x02) != 0 ||              /* Mask away MSF */
+	if ((fsg->cmnd[1] & ~0x02) != 0 ||	/* Mask away MSF */
 		start_track > 1) {
 			curlun->sense_data = SS_INVALID_FIELD_IN_CDB;
 			return -EINVAL;
 	}
 
 	memset(buf, 0, 20);
-	buf[1] = (20-2);                /* TOC data length */
-	buf[2] = 1;                     /* First track number */
-	buf[3] = 1;                     /* Last track number */
-	buf[5] = 0x14;                  /* Data track, copying allowed */
-	buf[6] = 0x01;                  /* Only track is number 1 */
+	buf[1] = (20-2);		/* TOC data length */
+	buf[2] = 1;			/* First track number */
+	buf[3] = 1;			/* Last track number */
+	buf[5] = 0x14;			/* Data track, copying allowed */
+	buf[6] = 0x01;			/* Only track is number 1 */
 	store_cdrom_address(&buf[8], msf, 0);
 
-	buf[13] = 0x16;                 /* Lead-out track is data */
-	buf[14] = 0xAA;                 /* Lead-out track number */
+	buf[13] = 0x16;			/* Lead-out track is data */
+	buf[14] = 0xAA;			/* Lead-out track number */
 	store_cdrom_address(&buf[16], msf, curlun->num_sectors);
 	return 20;
 }
@@ -1561,6 +1612,18 @@ static int do_mode_sense(struct fsg_dev *fsg, struct fsg_buffhd *bh)
 		buf += 8;
 		limit = 65535;
 	}
+
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+	if (!curlun->is_cdrom) {
+		if (backing_file_is_open(curlun)) {
+			buf += mldd_do_mode_sense(all_pages, page_code,
+						  fsg->cmnd[3], buf);
+		} else if (page_code == 0x3D) {
+			curlun->sense_data = SS_INVALID_FIELD_IN_CDB;
+			return -EINVAL;
+		}
+	}
+#endif
 
 	/* No block descriptors */
 
@@ -1656,7 +1719,7 @@ static int do_read_format_capacities(struct fsg_dev *fsg,
 	buf += 4;
 
 	put_be32(&buf[0], curlun->num_sectors);	/* Number of blocks */
-	put_be32(&buf[4], 1 << curlun->shift_size);/* Set block length */
+	put_be32(&buf[4], 1 << curlun->shift_size); /* Set block length */
 	buf[4] = 0x02;					/* Current capacity */
 	return 12;
 }
@@ -1907,7 +1970,11 @@ static int send_status(struct fsg_dev *fsg)
 	 * writing on to storage media, need to set
 	 * residue to zero,assuming that write will succeed.
 	 */
-	csw->Residue = 0;
+	if (write_error_after_csw_sent) {
+		write_error_after_csw_sent = 0;
+		csw->Residue = cpu_to_le32(fsg->residue);
+	} else
+		csw->Residue = 0;
 #else
 	csw->Residue = cpu_to_le32(fsg->residue);
 #endif
@@ -1975,7 +2042,7 @@ static int check_command(struct fsg_dev *fsg, int cmnd_size,
 	/* Verify the length of the command itself */
 	if (cmnd_size != fsg->cmnd_size) {
 		/* The command size is incorrect for some host.
-		 * Ignore this problem if the command size is 
+		 * Ignore this problem if the command size is
 		 * large than it should be. */
 		if (cmnd_size < fsg->cmnd_size) {
 			cmnd_size = fsg->cmnd_size;
@@ -2152,22 +2219,22 @@ static int do_scsi_command(struct fsg_dev *fsg)
 		break;
 
 	case SC_READ_HEADER:
-		if (!((&fsg->luns[fsg->lun])->is_cdrom))
-		goto unknown_cmnd;
+		if (!fsg->luns[fsg->lun].is_cdrom)
+			goto unknown_cmnd;
 		fsg->data_size_from_cmnd = get_be16(&fsg->cmnd[7]);
-		if ((reply = check_command(fsg, 10, DATA_DIR_TO_HOST,
-				(3<<7) | (0x1f<<1), 1,
-				"READ HEADER")) == 0)
+		reply = check_command(fsg, 10, DATA_DIR_TO_HOST,
+				(3<<7) | (0x1f<<1), 1, "READ HEADER");
+		if (reply == 0)
 			reply = do_read_header(fsg, bh);
 		break;
 
 	case SC_READ_TOC:
-		if (!((&fsg->luns[fsg->lun])->is_cdrom))
-		goto unknown_cmnd;
+		if (!fsg->luns[fsg->lun].is_cdrom)
+			goto unknown_cmnd;
 		fsg->data_size_from_cmnd = get_be16(&fsg->cmnd[7]);
-		if ((reply = check_command(fsg, 10, DATA_DIR_TO_HOST,
-				(7<<6) | (1<<1), 1,
-				"READ TOC")) == 0)
+		reply = check_command(fsg, 10, DATA_DIR_TO_HOST,
+				(7<<6) | (1<<1), 1, "READ TOC");
+		if (reply == 0)
 			reply = do_read_toc(fsg, bh);
 		break;
 
@@ -2227,6 +2294,10 @@ static int do_scsi_command(struct fsg_dev *fsg)
 				(7<<1) | (1<<4), 1,
 				"WRITE(6)")) == 0)
 			reply = do_write(fsg);
+#ifdef CONFIG_USB_CSW_HACK
+		else
+			write_error_after_csw_sent = 1;
+#endif
 		break;
 
 	case SC_WRITE_10:
@@ -2235,6 +2306,10 @@ static int do_scsi_command(struct fsg_dev *fsg)
 				(1<<1) | (0xf<<2) | (3<<7), 1,
 				"WRITE(10)")) == 0)
 			reply = do_write(fsg);
+#ifdef CONFIG_USB_CSW_HACK
+		else
+			write_error_after_csw_sent = 1;
+#endif
 		break;
 
 	case SC_WRITE_12:
@@ -2243,8 +2318,29 @@ static int do_scsi_command(struct fsg_dev *fsg)
 				(1<<1) | (0xf<<2) | (0xf<<6), 1,
 				"WRITE(12)")) == 0)
 			reply = do_write(fsg);
+#ifdef CONFIG_USB_CSW_HACK
+		else
+			write_error_after_csw_sent = 1;
+#endif
 		break;
-
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+	case SC_REPORT_KEY:
+		fsg->data_size_from_cmnd = get_be16(&fsg->cmnd[8]);
+		reply = check_command(fsg, 12, DATA_DIR_TO_HOST,
+					(1 << 1) | (0xf << 7), 1,
+					"REPORT KEY");
+		if (reply == 0)
+			reply = do_report_key(fsg);
+		break;
+	case SC_SEND_KEY:
+		fsg->data_size_from_cmnd = get_be16(&fsg->cmnd[8]);
+		reply = check_command(fsg, 12, DATA_DIR_FROM_HOST,
+					(1 << 1) | (0xf << 7), 1,
+					"SEND KEY");
+		if (reply == 0)
+			reply = do_send_key(fsg);
+		break;
+#endif
 	/* Some mandatory commands that we recognize but don't implement.
 	 * They don't mean much in this setting.  It's left as an exercise
 	 * for anyone interested to implement RESERVE and RELEASE in terms
@@ -2342,8 +2438,12 @@ static int get_next_command(struct fsg_dev *fsg)
 	bh = fsg->next_buffhd_to_fill;
 	while (bh->state != BUF_STATE_EMPTY) {
 		rc = sleep_thread(fsg);
-		if (rc)
+		if (rc) {
+			usb_ep_dequeue(fsg->bulk_out, bh->outreq);
+			bh->outreq_busy = 0;
+			bh->state = BUF_STATE_EMPTY;
 			return rc;
+		}
 	}
 
 	/* Queue a request to read a Bulk-only CBW */
@@ -2358,8 +2458,12 @@ static int get_next_command(struct fsg_dev *fsg)
 	/* Wait for the CBW to arrive */
 	while (bh->state != BUF_STATE_FULL) {
 		rc = sleep_thread(fsg);
-		if (rc)
+		if (rc) {
+			usb_ep_dequeue(fsg->bulk_out, bh->outreq);
+			bh->outreq_busy = 0;
+			bh->state = BUF_STATE_EMPTY;
 			return rc;
+		}
 	}
 	smp_rmb();
 	rc = received_cbw(fsg, bh);
@@ -2401,19 +2505,16 @@ static int alloc_request(struct fsg_dev *fsg, struct usb_ep *ep,
  */
 static int do_set_interface(struct fsg_dev *fsg, int altsetting)
 {
-	struct usb_composite_dev *cdev = fsg->cdev;
 	int	rc = 0;
 	int	i;
-	const struct usb_endpoint_descriptor	*d;
 
 	if (fsg->running)
 		DBG(fsg, "reset interface\n");
-
 reset:
+
 	/* Deallocate the requests */
 	for (i = 0; i < NUM_BUFFERS; ++i) {
 		struct fsg_buffhd *bh = &fsg->buffhds[i];
-
 		if (bh->inreq) {
 			usb_ep_free_request(fsg->bulk_in, bh->inreq);
 			bh->inreq = NULL;
@@ -2424,17 +2525,9 @@ reset:
 		}
 	}
 
-	/* Disable the endpoints */
-	if (fsg->bulk_in_enabled) {
-		DBG(fsg, "usb_ep_disable %s\n", fsg->bulk_in->name);
-		usb_ep_disable(fsg->bulk_in);
-		fsg->bulk_in_enabled = 0;
-	}
-	if (fsg->bulk_out_enabled) {
-		DBG(fsg, "usb_ep_disable %s\n", fsg->bulk_out->name);
-		usb_ep_disable(fsg->bulk_out);
-		fsg->bulk_out_enabled = 0;
-	}
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+	mldd_disable();
+#endif
 
 	fsg->running = 0;
 	if (altsetting < 0 || rc != 0)
@@ -2442,17 +2535,9 @@ reset:
 
 	DBG(fsg, "set interface %d\n", altsetting);
 
-	/* Enable the endpoints */
-	d = ep_desc(cdev->gadget, &fs_bulk_in_desc, &hs_bulk_in_desc);
-	if ((rc = enable_endpoint(fsg, fsg->bulk_in, d)) != 0)
-		goto reset;
-	fsg->bulk_in_enabled = 1;
-
-	d = ep_desc(cdev->gadget, &fs_bulk_out_desc, &hs_bulk_out_desc);
-	if ((rc = enable_endpoint(fsg, fsg->bulk_out, d)) != 0)
-		goto reset;
-	fsg->bulk_out_enabled = 1;
-	fsg->bulk_out_maxpacket = le16_to_cpu(d->wMaxPacketSize);
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+	mldd_enable();
+#endif
 
 	/* Allocate the requests */
 	for (i = 0; i < NUM_BUFFERS; ++i) {
@@ -2511,9 +2596,6 @@ static int do_set_config(struct fsg_dev *fsg, u8 new_config)
 {
 	int	rc = 0;
 
-	if (new_config == fsg->config)
-		return rc;
-
 	/* Disable the single interface */
 	if (fsg->config != 0) {
 		DBG(fsg, "reset config\n");
@@ -2524,11 +2606,8 @@ static int do_set_config(struct fsg_dev *fsg, u8 new_config)
 	/* Enable the interface */
 	if (new_config != 0) {
 		fsg->config = new_config;
-		rc = do_set_interface(fsg, 0);
-		if (rc != 0)
-			fsg->config = 0;	/* Reset on errors */
-		else
-			INFO(fsg, "config #%d\n", fsg->config);
+		if ((rc = do_set_interface(fsg, 0)) != 0)
+			fsg->config = 0;	// Reset on errors
 	}
 
 	switch_set_state(&fsg->sdev, new_config);
@@ -2544,6 +2623,7 @@ static void handle_exception(struct fsg_dev *fsg)
 	siginfo_t		info;
 	int			sig;
 	int			i;
+	int			num_active;
 	struct fsg_buffhd	*bh;
 	enum fsg_state		old_state;
 	u8			new_config;
@@ -2564,12 +2644,40 @@ static void handle_exception(struct fsg_dev *fsg)
 		}
 	}
 
-	/* Clear out the controller's fifos */
-	if (fsg->bulk_in_enabled)
-		usb_ep_fifo_flush(fsg->bulk_in);
-	if (fsg->bulk_out_enabled)
-		usb_ep_fifo_flush(fsg->bulk_out);
+	/* Cancel all the pending transfers */
+	for (i = 0; i < NUM_BUFFERS; ++i) {
+		bh = &fsg->buffhds[i];
+		if (bh->inreq_busy)
+			usb_ep_dequeue(fsg->bulk_in, bh->inreq);
+		if (bh->outreq_busy)
+			usb_ep_dequeue(fsg->bulk_out, bh->outreq);
+	}
 
+	/* Wait until everything is idle */
+	for (;;) {
+		num_active = 0;
+		for (i = 0; i < NUM_BUFFERS; ++i) {
+			bh = &fsg->buffhds[i];
+			num_active += bh->outreq_busy;
+		}
+		if (num_active == 0)
+			break;
+		if (sleep_thread(fsg))
+			return;
+	}
+
+	/*
+	* Do NOT flush the fifo after set_interface()
+	* Otherwise, it results in some data being lost
+	*/
+	if ((fsg->state != FSG_STATE_CONFIG_CHANGE) ||
+		(fsg->new_config != 1))   {
+		/* Clear out the controller's fifos */
+		if (fsg->bulk_in_enabled)
+			usb_ep_fifo_flush(fsg->bulk_in);
+		if (fsg->bulk_out_enabled)
+			usb_ep_fifo_flush(fsg->bulk_out);
+	}
 	/* Reset the I/O buffer states and pointers, the SCSI
 	 * state, and the exception.  Then invoke the handler. */
 	spin_lock_irq(&fsg->lock);
@@ -2691,8 +2799,10 @@ static int fsg_main_thread(void *fsg_)
 		 * need to skip sending status once again if it is a
 		 * write scsi command.
 		 */
-		if (fsg->cmnd[0] == SC_WRITE_6  || fsg->cmnd[0] == SC_WRITE_10
-					|| fsg->cmnd[0] == SC_WRITE_12)
+		if (!(write_error_after_csw_sent) &&
+			(fsg->cmnd[0] == SC_WRITE_6
+			|| fsg->cmnd[0] == SC_WRITE_10
+			|| fsg->cmnd[0] == SC_WRITE_12))
 			continue;
 #endif
 		if (send_status(fsg))
@@ -2848,7 +2958,8 @@ static void close_all_backing_files(struct fsg_dev *fsg)
 		close_backing_file(fsg, &fsg->luns[i]);
 }
 
-static ssize_t show_ro(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t show_ro(struct device *dev,
+		struct device_attribute *attr, char *buf)
 {
 	struct lun *curlun = dev_to_lun(dev);
 
@@ -2881,6 +2992,7 @@ static ssize_t show_file(struct device *dev, struct device_attribute *attr,
 	up_read(&fsg->filesem);
 	return rc;
 }
+
 static ssize_t store_ro(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t count)
 {
@@ -2892,8 +3004,8 @@ static ssize_t store_ro(struct device *dev, struct device_attribute *attr,
 	if (sscanf(buf, "%d", &i) != 1)
 		return -EINVAL;
 
-	/* Allow the write-enable status to change only while the backing file*
-	 * *is closed. */
+	/* Allow the write-enable status to change only while the backing file
+	 * is closed. */
 	down_read(&fsg->filesem);
 	if (backing_file_is_open(curlun)) {
 		LDBG(curlun, "read-only status change prevented\n");
@@ -2929,6 +3041,10 @@ static ssize_t store_file(struct device *dev, struct device_attribute *attr,
 	/* Eject current medium */
 	down_write(&fsg->filesem);
 	if (backing_file_is_open(curlun)) {
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+		if (!curlun->is_cdrom)
+			mldd_unmount();
+#endif
 		close_backing_file(fsg, curlun);
 		curlun->unit_attention_data = SS_MEDIUM_NOT_PRESENT;
 	}
@@ -2939,13 +3055,19 @@ static ssize_t store_file(struct device *dev, struct device_attribute *attr,
 		if (rc == 0)
 			curlun->unit_attention_data =
 					SS_NOT_READY_TO_READY_TRANSITION;
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+		if (rc == 0 && !curlun->is_cdrom)
+			mldd_mount();
+#endif
 	}
 	up_write(&fsg->filesem);
 	return (rc < 0 ? rc : count);
 }
 
+
 static DEVICE_ATTR(file, 0444, show_file, store_file);
 static DEVICE_ATTR(ro, 0444, show_ro, NULL);
+
 /*-------------------------------------------------------------------------*/
 
 static void fsg_release(struct kref *ref)
@@ -3028,7 +3150,11 @@ fsg_function_unbind(struct usb_configuration *c, struct usb_function *f)
 	for (i = 0; i < NUM_BUFFERS; ++i)
 		kfree(fsg->buffhds[i].buf);
 	switch_dev_unregister(&fsg->sdev);
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+	mldd_fin();
+#endif
 }
+
 static void setup_luns(struct fsg_dev *fsg)
 {
 	if (fsg->func_type == FUNC_TYPE_MSC || fsg->cdrom_nluns < 1) {
@@ -3347,7 +3473,12 @@ int mass_storage_bind_config(struct usb_configuration *c)
 	int		rc;
 	struct fsg_dev	*fsg;
 
-	printk(KERN_INFO "mass_storage_function_add\n");
+	printk(KERN_INFO "mass_storage_bind_config\n");
+#ifdef CONFIG_USB_MARLIN_SCSI_EXTENSIONS
+	rc = mldd_init();
+	if (rc != 0)
+		return rc;
+#endif
 	rc = fsg_alloc();
 	if (rc)
 		return rc;
@@ -3371,7 +3502,7 @@ int mass_storage_bind_config(struct usb_configuration *c)
 		goto err_platform_driver_register;
 
 	wake_lock_init(&the_fsg->wake_lock, WAKE_LOCK_SUSPEND,
-		       "usb_mass_storage");
+			   "usb_mass_storage");
 
 	fsg->cdev = c->cdev;
 	fsg->function.name = shortname;
@@ -3387,6 +3518,7 @@ int mass_storage_bind_config(struct usb_configuration *c)
 	rc = usb_add_function(c, &fsg->function);
 	if (rc != 0)
 		goto err_usb_add_function;
+
 
 	return 0;
 

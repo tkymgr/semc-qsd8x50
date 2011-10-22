@@ -110,6 +110,19 @@ config DEVKMEM
 	  kind of kernel debugging operations.
 	  When in doubt, say "N".
 
+config BFIN_JTAG_COMM
+	tristate "Blackfin JTAG Communication"
+	depends on BLACKFIN
+	help
+	  Add support for emulating a TTY device over the Blackfin JTAG.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called bfin_jtag_comm.
+
+config BFIN_JTAG_COMM_CONSOLE
+	bool "Console on Blackfin JTAG"
+	depends on BFIN_JTAG_COMM=y
+
 config SERIAL_NONSTANDARD
 	bool "Non-standard serial port support"
 	depends on HAS_IOMEM
@@ -323,7 +336,7 @@ config SPECIALIX
 
 config SX
 	tristate "Specialix SX (and SI) card support"
-	depends on SERIAL_NONSTANDARD && (PCI || EISA || ISA)
+	depends on SERIAL_NONSTANDARD && (PCI || EISA || ISA) && BROKEN
 	help
 	  This is a driver for the SX and SI multiport serial cards.
 	  Please read the file <file:Documentation/serial/sx.txt> for details.
@@ -334,7 +347,7 @@ config SX
 
 config RIO
 	tristate "Specialix RIO system support"
-	depends on SERIAL_NONSTANDARD
+	depends on SERIAL_NONSTANDARD && BROKEN
 	help
 	  This is a driver for the Specialix RIO, a smart serial card which
 	  drives an outboard box that can support up to 128 ports.  Product
@@ -395,7 +408,7 @@ config NOZOMI
 
 config A2232
 	tristate "Commodore A2232 serial support (EXPERIMENTAL)"
-	depends on EXPERIMENTAL && ZORRO && BROKEN_ON_SMP
+	depends on EXPERIMENTAL && ZORRO && BROKEN
 	---help---
 	  This option supports the 2232 7-port serial card shipped with the
 	  Amiga 2000 and other Zorro-bus machines, dating from 1989.  At
@@ -694,7 +707,7 @@ config HVCS
 	  this driver.
 
 	  To compile this driver as a module, choose M here: the
-	  module will be called hvcs.ko.  Additionally, this module
+	  module will be called hvcs.  Additionally, this module
 	  will depend on arch specific APIs exported from hvcserver.ko
 	  which will also be compiled when this driver is built as a
 	  module.
@@ -809,7 +822,7 @@ if RTC_LIB=n
 config RTC
 	tristate "Enhanced Real Time Clock Support (legacy PC RTC driver)"
 	depends on !PPC && !PARISC && !IA64 && !M68K && !SPARC && !FRV \
-			&& !ARM && !SUPERH && !S390 && !AVR32
+			&& !ARM && !SUPERH && !S390 && !AVR32 && !BLACKFIN
 	---help---
 	  If you say Y here and create a character special file /dev/rtc with
 	  major number 10 and minor number 135 using mknod ("man mknod"), you
@@ -908,7 +921,7 @@ config DTLK
 
 config XILINX_HWICAP
 	tristate "Xilinx HWICAP Support"
-	depends on XILINX_VIRTEX
+	depends on XILINX_VIRTEX || MICROBLAZE
 	help
 	  This option enables support for Xilinx Internal Configuration
 	  Access Port (ICAP) driver.  The ICAP is used on Xilinx Virtex
@@ -1031,10 +1044,6 @@ config CS5535_GPIO
 
 	  If compiled as a module, it will be called cs5535_gpio.
 
-config GPIO_VR41XX
-	tristate "NEC VR4100 series General-purpose I/O Unit support"
-	depends on CPU_VR41XX
-
 config RAW_DRIVER
 	tristate "RAW driver (/dev/raw/rawN)"
 	depends on BLOCK
@@ -1093,6 +1102,14 @@ config MMTIMER
 	  The mmtimer device allows direct userspace access to the
 	  Altix system timer.
 
+config UV_MMTIMER
+	tristate "UV_MMTIMER Memory mapped RTC for SGI UV"
+	depends on X86_UV
+	default m
+	help
+	  The uv_mmtimer device allows direct userspace access to the
+	  UV system timer.
+
 source "drivers/char/tpm/Kconfig"
 
 config TELCLOCK
@@ -1118,40 +1135,11 @@ config DCC_TTY
 	tristate "DCC tty driver"
 	depends on ARM
 
-config MSM_KGSL
-	tristate "MSM 3D Graphics driver"
-	default n
-	depends on FB && ARM && (ARCH_QSD8X50 || ARCH_MSM7X27 || ARCH_MSM7X30) && !MSM_HW3D && ANDROID_PMEM
-	select GENERIC_ALLOCATOR
-	select FW_LOADER
-	---help---
-	  3D graphics driver. Required to use hardware accelerated
-	  OpenGL ES 2.0 and 1.1.
-
-config MSM_KGSL_DRM
-	bool "Build a DRM interface for the MSM_KGSL driver"
-	depends on MSM_KGSL && DRM
-
-config MSM_KGSL_MMU
-    bool "Enable the GPU MMU in the MSM_KGSL driver"
-    depends on MSM_KGSL && MMU
-    default y
-
-config KGSL_PER_PROCESS_PAGE_TABLE
-	bool "Enable Per Process page tables for the KGSL driver"
-	default n
-	depends on MSM_KGSL_MMU
-
-config MSM_KGSL_MMU_PAGE_FAULT
-	bool "Force the GPU MMU to page fault for unmapped regions"
-	default n
-	depends on MSM_KGSL_MMU
-
 source "drivers/s390/char/Kconfig"
 
 config MSM_ROTATOR
 	tristate "MSM Offline Image Rotator Driver"
-	depends on ARCH_MSM7X30 && ANDROID_PMEM
+	depends on (ARCH_MSM7X30 || ARCH_MSM8X60) && ANDROID_PMEM
 	default y
 	help
 	  This driver provides support for the image rotator HW block in the
@@ -1159,7 +1147,7 @@ config MSM_ROTATOR
 
 config MSM_ROTATOR_USE_IMEM
 	bool "Enable rotator driver to use iMem"
-	depends on MSM_ROTATOR
+	depends on ARCH_MSM7X30 && MSM_ROTATOR
 	default y
 	help
 	  This option enables the msm_rotator driver to use the move efficient
@@ -1167,5 +1155,28 @@ config MSM_ROTATOR_USE_IMEM
 	  block.  Or some systems may want the iMem to be dedicated to a
 	  different function.
 
+config MMC_GENERIC_CSDIO
+	tristate "Generic sdio driver"
+	default n
+	help
+	  SDIO function driver that extends SDIO card as character device
+	  in user space.
+
+config CSDIO_VENDOR_ID
+	hex "Card VendorId"
+	depends on MMC_GENERIC_CSDIO
+	default "0"
+	help
+	  Enter vendor id for targeted sdio device, this may be overwritten by
+	  module parameters.
+
+config CSDIO_DEVICE_ID
+	hex "CardDeviceId"
+	depends on MMC_GENERIC_CSDIO
+	default "0"
+	help
+	  Enter device id for targeted sdio device, this may be overwritten by
+	  module parameters.
+.
 endmenu
 

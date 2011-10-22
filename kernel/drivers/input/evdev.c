@@ -13,6 +13,7 @@
 #define EVDEV_BUFFER_SIZE	64
 
 #include <linux/poll.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/init.h>
@@ -26,7 +27,6 @@ struct evdev {
 	int exist;
 	int open;
 	int minor;
-	char name[16];
 	struct input_handle handle;
 	wait_queue_head_t wait;
 	struct evdev_client *grab;
@@ -61,6 +61,10 @@ static void evdev_pass_event(struct evdev_client *client,
 	wake_lock_timeout(&client->wake_lock, 5 * HZ);
 	client->buffer[client->head++] = *event;
 	client->head &= EVDEV_BUFFER_SIZE - 1;
+	if (unlikely(client->head == client->tail)) {
+		client->tail++;
+		client->tail &= EVDEV_BUFFER_SIZE - 1;
+	}
 	spin_unlock(&client->buffer_lock);
 
 	kill_fasync(&client->fasync, SIGIO, POLL_IN);
@@ -101,11 +105,8 @@ static void evdev_event(struct input_handle *handle,
 static int evdev_fasync(int fd, struct file *file, int on)
 {
 	struct evdev_client *client = file->private_data;
-	int retval;
 
-	retval = fasync_helper(fd, file, on, &client->fasync);
-
-	return retval < 0 ? retval : 0;
+	return fasync_helper(fd, file, on, &client->fasync);
 }
 
 static int evdev_flush(struct file *file, fl_owner_t id)
@@ -280,8 +281,8 @@ static int evdev_open(struct inode *inode, struct file *file)
 	}
 
 	spin_lock_init(&client->buffer_lock);
-	snprintf(client->name, sizeof(client->name), "%s-%d", evdev->name,
-			task_tgid_vnr(current));
+	snprintf(client->name, sizeof(client->name), "%s-%d",
+			dev_name(&evdev->dev), task_tgid_vnr(current));
 	wake_lock_init(&client->wake_lock, WAKE_LOCK_SUSPEND, client->name);
 	client->evdev = evdev;
 	evdev_attach_client(evdev, client);
@@ -295,6 +296,7 @@ static int evdev_open(struct inode *inode, struct file *file)
 
  err_free_client:
 	evdev_detach_client(evdev, client);
+	wake_lock_destroy(&client->wake_lock);
 	kfree(client);
  err_put_evdev:
 	put_device(&evdev->dev);
@@ -642,8 +644,11 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 				abs.maximum = dev->absmax[t];
 				abs.fuzz = dev->absfuzz[t];
 				abs.flat = dev->absflat[t];
+				abs.resolution = dev->absres[t];
 
-				if (copy_to_user(p, &abs, sizeof(struct input_absinfo)))
+				if (copy_to_user(p, &abs, min_t(size_t,
+								_IOC_SIZE(cmd),
+								sizeof(struct input_absinfo))))
 					return -EFAULT;
 
 				return 0;
@@ -670,8 +675,9 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 
 				t = _IOC_NR(cmd) & ABS_MAX;
 
-				if (copy_from_user(&abs, p,
-						sizeof(struct input_absinfo)))
+				if (copy_from_user(&abs, p, min_t(size_t,
+								  _IOC_SIZE(cmd),
+								  sizeof(struct input_absinfo))))
 					return -EFAULT;
 
 				/*
@@ -686,6 +692,8 @@ static long evdev_do_ioctl(struct file *file, unsigned int cmd,
 				dev->absmax[t] = abs.maximum;
 				dev->absfuzz[t] = abs.fuzz;
 				dev->absflat[t] = abs.flat;
+				dev->absres[t] = _IOC_SIZE(cmd) < sizeof(struct input_absinfo) ?
+							0 : abs.resolution;
 
 				spin_unlock_irq(&dev->event_lock);
 
@@ -823,16 +831,15 @@ static int evdev_connect(struct input_handler *handler, struct input_dev *dev,
 	mutex_init(&evdev->mutex);
 	init_waitqueue_head(&evdev->wait);
 
-	snprintf(evdev->name, sizeof(evdev->name), "event%d", minor);
+	dev_set_name(&evdev->dev, "event%d", minor);
 	evdev->exist = 1;
 	evdev->minor = minor;
 
 	evdev->handle.dev = input_get_device(dev);
-	evdev->handle.name = evdev->name;
+	evdev->handle.name = dev_name(&evdev->dev);
 	evdev->handle.handler = handler;
 	evdev->handle.private = evdev;
 
-	dev_set_name(&evdev->dev, evdev->name);
 	evdev->dev.devt = MKDEV(INPUT_MAJOR, EVDEV_MINOR_BASE + minor);
 	evdev->dev.class = &input_class;
 	evdev->dev.parent = &dev->dev;

@@ -20,8 +20,14 @@
 #include <mach/msm_qdsp6_audio.h>
 #include <asm/mach-types.h>
 
+#ifdef CONFIG_MACH_ES209RA
 #define GPIO_HEADSET_AMP 149
 #define GPIO_SPEAKER_AMP 154
+#else
+#define GPIO_HEADSET_AMP 157
+#define GPIO_SPEAKER_AMP 39
+#endif
+
 #define GPIO_HEADSET_SHDN_N 48
 
 void analog_init(void)
@@ -35,6 +41,8 @@ void analog_init(void)
 		gpio_set_value(GPIO_SPEAKER_AMP, 0);
 		gpio_set_value(GPIO_HEADSET_SHDN_N, 0);
 	} else {
+		// patched by tsuyo.kou
+		gpio_request(GPIO_HEADSET_AMP, NULL);
 		gpio_direction_output(GPIO_HEADSET_AMP, 1);
 		gpio_set_value(GPIO_HEADSET_AMP, 0);
 	}

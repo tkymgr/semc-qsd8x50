@@ -140,10 +140,8 @@ enum {
 /* 2 VG pipes can be shared by RGB and VIDEO */
 #define MDP4_MAX_PIPE 	(OVERLAY_PIPE_MAX + 2)
 
-enum {
-	OVERLAY_TYPE_RGB,
-	OVERLAY_TYPE_VG		/* video/graphic */
-};
+#define OVERLAY_TYPE_RGB	0x01
+#define	OVERLAY_TYPE_VIDEO	0x02
 
 enum {
 	MDP4_MIXER0,
@@ -224,10 +222,6 @@ enum {
 
 #define MDP4_MAX_PLANE		4
 
-#define MDP4_MAX_VIDEO_PIPE 2
-#define MDP4_MAX_RGB_PIPE 2
-#define MDP4_MAX_OVERLAY_PIPE 	4
-
 
 struct mdp4_overlay_pipe {
 	uint32 pipe_used;
@@ -269,7 +263,6 @@ struct mdp4_overlay_pipe {
 	uint32 chroma_sample;		/* video */
 	uint32 solid_fill;
 	uint32 vc1_reduce;		/* video */
-	uint32 fatch_planes;		/* video */
 	uint32 unpack_align_msb;/* 0 to LSB, 1 to MSB */
 	uint32 unpack_tight;/* 0 for loose, 1 for tight */
 	uint32 unpack_count;/* 0 = 1 component, 1 = 2 component ... */
@@ -400,11 +393,12 @@ int mdp4_overlay_set(struct fb_info *info, struct mdp_overlay *req);
 int mdp4_overlay_unset(struct fb_info *info, int ndx);
 int mdp4_overlay_play(struct fb_info *info, struct msmfb_overlay_data *req,
 				struct file **pp_src_file);
-struct mdp4_overlay_pipe *mdp4_overlay_pipe_alloc(int ptype);
+int mdp4_overlay_refresh(struct fb_info *info, int ndx);
+struct mdp4_overlay_pipe *mdp4_overlay_pipe_alloc(int ptype, boolean usevg);
 void mdp4_overlay_pipe_free(struct mdp4_overlay_pipe *pipe);
 void mdp4_overlay_dmap_cfg(struct msm_fb_data_type *mfd, int lcdc);
 void mdp4_overlay_dmap_xy(struct mdp4_overlay_pipe *pipe);
-void mdp4_overlay_dmae_cfg(struct msm_fb_data_type *mfd, int lcdc);
+void mdp4_overlay_dmae_cfg(struct msm_fb_data_type *mfd, int atv);
 void mdp4_overlay_dmae_xy(struct mdp4_overlay_pipe *pipe);
 int mdp4_overlay_pipe_staged(int mixer);
 void mdp4_overlay0_done_lcdc(void);
@@ -431,10 +425,16 @@ uint32 mdp4_overlay_panel_list(void);
 void mdp4_lcdc_overlay_kickoff(struct msm_fb_data_type *mfd,
 			struct mdp4_overlay_pipe *pipe);
 
-#ifdef CONFIG_DEBUG_FS
-int mdp4_debugfs_init(void);
-#endif
+void mdp4_mddi_kickoff_video(struct msm_fb_data_type *mfd,
+                                struct mdp4_overlay_pipe *pipe);
+
+void mdp4_mddi_read_ptr_intr(void);
+
+void mdp_dmap_vsync_set(int enable);
+int mdp_dmap_vsync_get(void);
+void mdp_hw_cursor_done(void);
+void mdp_hw_cursor_init(void);
 
 int mdp_ppp_blit(struct fb_info *info, struct mdp_blit_req *req);
-
+void mdp_vsync_config_update(struct msm_panel_info *pinfo);
 #endif /* MDP_H */

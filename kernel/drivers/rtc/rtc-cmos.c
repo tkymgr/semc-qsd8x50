@@ -797,17 +797,15 @@ cmos_do_probe(struct device *dev, struct resource *ports, int rtc_irq)
 		goto cleanup2;
 	}
 
-	pr_info("%s: alarms up to one %s%s, %zd bytes nvram%s\n",
-			dev_name(&cmos_rtc.rtc->dev),
-			is_valid_irq(rtc_irq)
-				?  (cmos_rtc.mon_alrm
-					? "year"
-					: (cmos_rtc.day_alrm
-						? "month" : "day"))
-				: "no",
-			cmos_rtc.century ? ", y3k" : "",
-			nvram.size,
-			is_hpet_enabled() ? ", hpet irqs" : "");
+	pr_info("%s: %s%s, %zd bytes nvram%s\n",
+		dev_name(&cmos_rtc.rtc->dev),
+		!is_valid_irq(rtc_irq) ? "no alarms" :
+			cmos_rtc.mon_alrm ? "alarms up to one year" :
+			cmos_rtc.day_alrm ? "alarms up to one month" :
+			"alarms up to one day",
+		cmos_rtc.century ? ", y3k" : "",
+		nvram.size,
+		is_hpet_enabled() ? ", hpet irqs" : "");
 
 	return 0;
 
@@ -1101,9 +1099,9 @@ static int cmos_pnp_resume(struct pnp_dev *pnp)
 #define	cmos_pnp_resume		NULL
 #endif
 
-static void cmos_pnp_shutdown(struct device *pdev)
+static void cmos_pnp_shutdown(struct pnp_dev *pnp)
 {
-	if (system_state == SYSTEM_POWER_OFF && !cmos_poweroff(pdev))
+	if (system_state == SYSTEM_POWER_OFF && !cmos_poweroff(&pnp->dev))
 		return;
 
 	cmos_do_shutdown();
@@ -1122,15 +1120,12 @@ static struct pnp_driver cmos_pnp_driver = {
 	.id_table	= rtc_ids,
 	.probe		= cmos_pnp_probe,
 	.remove		= __exit_p(cmos_pnp_remove),
+	.shutdown	= cmos_pnp_shutdown,
 
 	/* flag ensures resume() gets called, and stops syslog spam */
 	.flags		= PNP_DRIVER_RES_DO_NOT_CHANGE,
 	.suspend	= cmos_pnp_suspend,
 	.resume		= cmos_pnp_resume,
-	.driver		= {
-		.name	  = (char *)driver_name,
-		.shutdown = cmos_pnp_shutdown,
-	}
 };
 
 #endif	/* CONFIG_PNP */
@@ -1176,23 +1171,34 @@ static struct platform_driver cmos_platform_driver = {
 	}
 };
 
+#ifdef CONFIG_PNP
+static bool pnp_driver_registered;
+#endif
+static bool platform_driver_registered;
+
 static int __init cmos_init(void)
 {
 	int retval = 0;
 
 #ifdef	CONFIG_PNP
-	pnp_register_driver(&cmos_pnp_driver);
+	retval = pnp_register_driver(&cmos_pnp_driver);
+	if (retval == 0)
+		pnp_driver_registered = true;
 #endif
 
-	if (!cmos_rtc.dev)
+	if (!cmos_rtc.dev) {
 		retval = platform_driver_probe(&cmos_platform_driver,
 					       cmos_platform_probe);
+		if (retval == 0)
+			platform_driver_registered = true;
+	}
 
 	if (retval == 0)
 		return 0;
 
 #ifdef	CONFIG_PNP
-	pnp_unregister_driver(&cmos_pnp_driver);
+	if (pnp_driver_registered)
+		pnp_unregister_driver(&cmos_pnp_driver);
 #endif
 	return retval;
 }
@@ -1201,9 +1207,11 @@ module_init(cmos_init);
 static void __exit cmos_exit(void)
 {
 #ifdef	CONFIG_PNP
-	pnp_unregister_driver(&cmos_pnp_driver);
+	if (pnp_driver_registered)
+		pnp_unregister_driver(&cmos_pnp_driver);
 #endif
-	platform_driver_unregister(&cmos_platform_driver);
+	if (platform_driver_registered)
+		platform_driver_unregister(&cmos_platform_driver);
 }
 module_exit(cmos_exit);
 

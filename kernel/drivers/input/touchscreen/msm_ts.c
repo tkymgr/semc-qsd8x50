@@ -25,8 +25,13 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/mfd/marimba-tsadc.h>
+#include <linux/pm.h>
 
-#include <mach/msm_ts.h>
+#if defined(CONFIG_HAS_EARLYSUSPEND)
+#include <linux/earlysuspend.h>
+#endif
+
+#include <linux/input/msm_ts.h>
 
 #define TSSC_CTL			0x100
 #define 	TSSC_CTL_PENUP_IRQ	(1 << 12)
@@ -59,6 +64,14 @@ struct msm_ts {
 	uint32_t			ts_down:1;
 	struct ts_virt_key		*vkey_down;
 	struct marimba_tsadc_client	*ts_client;
+
+	unsigned int			sample_irq;
+	unsigned int			pen_up_irq;
+
+#if defined(CONFIG_HAS_EARLYSUSPEND)
+	struct early_suspend		early_suspend;
+#endif
+	struct device			*dev;
 };
 
 static uint32_t msm_tsdebug;
@@ -222,6 +235,79 @@ static int __devinit msm_ts_hw_init(struct msm_ts *ts)
 	return 0;
 }
 
+static void msm_ts_enable(struct msm_ts *ts, bool enable)
+{
+	uint32_t val;
+
+	if (enable == true)
+		msm_ts_hw_init(ts);
+	else {
+		val = tssc_readl(ts, TSSC_CTL);
+		val &= ~TSSC_CTL_ENABLE;
+		tssc_writel(ts, val, TSSC_CTL);
+	}
+}
+
+#ifdef CONFIG_PM
+static int
+msm_ts_suspend(struct device *dev)
+{
+	struct msm_ts *ts =  dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev) &&
+			device_may_wakeup(dev->parent))
+		enable_irq_wake(ts->sample_irq);
+	else {
+		disable_irq(ts->sample_irq);
+		disable_irq(ts->pen_up_irq);
+		msm_ts_enable(ts, false);
+	}
+
+	return 0;
+}
+
+static int
+msm_ts_resume(struct device *dev)
+{
+	struct msm_ts *ts =  dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev) &&
+			device_may_wakeup(dev->parent))
+		disable_irq_wake(ts->sample_irq);
+	else {
+		msm_ts_enable(ts, true);
+		enable_irq(ts->sample_irq);
+		enable_irq(ts->pen_up_irq);
+	}
+
+	return 0;
+}
+
+static struct dev_pm_ops msm_touchscreen_pm_ops = {
+#ifndef CONFIG_HAS_EARLYSUSPEND
+	.suspend	= msm_ts_suspend,
+	.resume		= msm_ts_resume,
+#endif
+};
+#endif
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void msm_ts_early_suspend(struct early_suspend *h)
+{
+	struct msm_ts *ts = container_of(h, struct msm_ts, early_suspend);
+
+	msm_ts_suspend(ts->dev);
+}
+
+static void msm_ts_late_resume(struct early_suspend *h)
+{
+	struct msm_ts *ts = container_of(h, struct msm_ts, early_suspend);
+
+	msm_ts_resume(ts->dev);
+}
+#endif
+
+
 static int __devinit msm_ts_probe(struct platform_device *pdev)
 {
 	struct msm_ts_platform_data *pdata = pdev->dev.platform_data;
@@ -232,6 +318,8 @@ static int __devinit msm_ts_probe(struct platform_device *pdev)
 	int err = 0;
 	int i;
 	struct marimba_tsadc_client *ts_client;
+
+	printk("%s\n", __func__);
 
 	tssc_res = platform_get_resource_byname(pdev, IORESOURCE_MEM, "tssc");
 	irq1_res = platform_get_resource_byname(pdev, IORESOURCE_IRQ, "tssc1");
@@ -253,6 +341,10 @@ static int __devinit msm_ts_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	ts->pdata = pdata;
+	ts->dev	  = &pdev->dev;
+
+	ts->sample_irq = irq1_res->start;
+	ts->pen_up_irq = irq2_res->start;
 
 	ts->tssc_base = ioremap(tssc_res->start, resource_size(tssc_res));
 	if (ts->tssc_base == NULL) {
@@ -264,16 +356,16 @@ static int __devinit msm_ts_probe(struct platform_device *pdev)
 
 	ts_client = marimba_tsadc_register(pdev, 1);
 	if (IS_ERR(ts_client)) {
-		err = -ENODEV;
 		pr_err("%s: Unable to register with TSADC\n", __func__);
+		err = -ENOMEM;
 		goto err_tsadc_register;
 	}
-
 	ts->ts_client = ts_client;
 
 	err = marimba_tsadc_start(ts_client);
-	if (err < 0) {
+	if (err) {
 		pr_err("%s: Unable to start TSADC\n", __func__);
+		err = -EINVAL;
 		goto err_start_tsadc;
 	}
 
@@ -284,6 +376,8 @@ static int __devinit msm_ts_probe(struct platform_device *pdev)
 		goto err_alloc_input_dev;
 	}
 	ts->input_dev->name = "msm-touchscreen";
+	ts->input_dev->dev.parent = &pdev->dev;
+
 	input_set_drvdata(ts->input_dev, ts);
 
 	input_set_capability(ts->input_dev, EV_KEY, BTN_TOUCH);
@@ -311,7 +405,7 @@ static int __devinit msm_ts_probe(struct platform_device *pdev)
 
 	msm_ts_hw_init(ts);
 
-	err = request_irq(irq1_res->start, msm_ts_irq,
+	err = request_irq(ts->sample_irq, msm_ts_irq,
 			  (irq1_res->flags & ~IORESOURCE_IRQ) | IRQF_DISABLED,
 			  "msm_touchscreen", ts);
 	if (err != 0) {
@@ -319,7 +413,7 @@ static int __devinit msm_ts_probe(struct platform_device *pdev)
 		goto err_request_irq1;
 	}
 
-	err = request_irq(irq2_res->start, msm_ts_irq,
+	err = request_irq(ts->pen_up_irq, msm_ts_irq,
 			  (irq2_res->flags & ~IORESOURCE_IRQ) | IRQF_DISABLED,
 			  "msm_touchscreen", ts);
 	if (err != 0) {
@@ -329,13 +423,22 @@ static int __devinit msm_ts_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, ts);
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	ts->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN +
+						TSSC_SUSPEND_LEVEL;
+	ts->early_suspend.suspend = msm_ts_early_suspend;
+	ts->early_suspend.resume = msm_ts_late_resume;
+	register_early_suspend(&ts->early_suspend);
+#endif
+
+	device_init_wakeup(&pdev->dev, pdata->can_wakeup);
 	pr_info("%s: tssc_base=%p irq1=%d irq2=%d\n", __func__,
-		ts->tssc_base, (int)irq1_res->start, (int)irq2_res->start);
+		ts->tssc_base, (int)ts->sample_irq, (int)ts->pen_up_irq);
 	dump_tssc_regs(ts);
 	return 0;
 
 err_request_irq2:
-	free_irq(irq1_res->start, ts);
+	free_irq(ts->sample_irq, ts);
 
 err_request_irq1:
 	/* disable the tssc */
@@ -360,17 +463,16 @@ err_ioremap_tssc:
 static int __devexit msm_ts_remove(struct platform_device *pdev)
 {
 	struct msm_ts *ts = platform_get_drvdata(pdev);
-	struct resource *irq1_res;
-	struct resource *irq2_res;
 
-	irq1_res = platform_get_resource_byname(pdev, IORESOURCE_IRQ, "tssc1");
-	irq2_res = platform_get_resource_byname(pdev, IORESOURCE_IRQ, "tssc2");
-
+	device_init_wakeup(&pdev->dev, 0);
 	marimba_tsadc_unregister(ts->ts_client);
-	free_irq(irq1_res->start, ts);
-	free_irq(irq2_res->start, ts);
+	free_irq(ts->sample_irq, ts);
+	free_irq(ts->pen_up_irq, ts);
 	input_unregister_device(ts->input_dev);
 	iounmap(ts->tssc_base);
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	unregister_early_suspend(&ts->early_suspend);
+#endif
 	platform_set_drvdata(pdev, NULL);
 	kfree(ts);
 
@@ -381,9 +483,12 @@ static struct platform_driver msm_touchscreen_driver = {
 	.driver = {
 		.name = "msm_touchscreen",
 		.owner = THIS_MODULE,
+#ifdef CONFIG_PM
+		.pm = &msm_touchscreen_pm_ops,
+#endif
 	},
-	.probe = msm_ts_probe,
-	.remove = __devexit_p(msm_ts_remove),
+	.probe		= msm_ts_probe,
+	.remove		= __devexit_p(msm_ts_remove),
 };
 
 static int __init msm_ts_init(void)
@@ -396,7 +501,7 @@ static void __exit msm_ts_exit(void)
 	platform_driver_unregister(&msm_touchscreen_driver);
 }
 
-device_initcall(msm_ts_init);
+module_init(msm_ts_init);
 module_exit(msm_ts_exit);
 MODULE_DESCRIPTION("Qualcomm MSM/QSD Touchscreen controller driver");
 MODULE_LICENSE("GPL");

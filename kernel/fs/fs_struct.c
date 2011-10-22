@@ -148,7 +148,6 @@ EXPORT_SYMBOL(current_umask);
 /* to be mentioned only in INIT_TASK */
 struct fs_struct init_fs = {
 	.users		= 1,
-	.count		= ATOMIC_INIT(1),
 	.lock		= __RW_LOCK_UNLOCKED(init_fs.lock),
 	.umask		= 0022,
 };

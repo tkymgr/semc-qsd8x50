@@ -3,6 +3,8 @@ deps_config := \
 	drivers/crypto/Kconfig \
 	crypto/async_tx/Kconfig \
 	crypto/Kconfig \
+	security/integrity/ima/Kconfig \
+	security/tomoyo/Kconfig \
 	security/smack/Kconfig \
 	security/selinux/Kconfig \
 	security/Kconfig \
@@ -25,6 +27,7 @@ deps_config := \
 	net/sunrpc/Kconfig \
 	fs/nfsd/Kconfig \
 	fs/nfs/Kconfig \
+	fs/exofs/Kconfig \
 	fs/ufs/Kconfig \
 	fs/sysv/Kconfig \
 	fs/romfs/Kconfig \
@@ -53,12 +56,16 @@ deps_config := \
 	fs/fat/Kconfig \
 	fs/udf/Kconfig \
 	fs/isofs/Kconfig \
+	fs/cachefiles/Kconfig \
+	fs/fscache/Kconfig \
 	fs/fuse/Kconfig \
 	fs/autofs4/Kconfig \
 	fs/autofs/Kconfig \
+	fs/quota/Kconfig \
 	fs/notify/inotify/Kconfig \
 	fs/notify/dnotify/Kconfig \
 	fs/notify/Kconfig \
+	fs/nilfs2/Kconfig \
 	fs/btrfs/Kconfig \
 	fs/ocfs2/Kconfig \
 	fs/gfs2/Kconfig \
@@ -73,30 +80,59 @@ deps_config := \
 	fs/Kconfig \
 	drivers/platform/x86/Kconfig \
 	drivers/platform/Kconfig \
+	drivers/staging/iio/trigger/Kconfig \
+	drivers/staging/iio/light/Kconfig \
+	drivers/staging/iio/adc/Kconfig \
+	drivers/staging/iio/accel/Kconfig \
+	drivers/staging/iio/Kconfig \
+	drivers/staging/sep/Kconfig \
+	drivers/staging/rar/Kconfig \
+	drivers/staging/vme/devices/Kconfig \
+	drivers/staging/vme/bridges/Kconfig \
+	drivers/staging/vme/Kconfig \
+	drivers/staging/hv/Kconfig \
+	drivers/staging/udlfb/Kconfig \
+	drivers/staging/vt6656/Kconfig \
+	drivers/staging/vt6655/Kconfig \
+	drivers/staging/quatech_usb2/Kconfig \
+	drivers/staging/serqt_usb2/Kconfig \
+	drivers/staging/octeon/Kconfig \
+	drivers/gpu/drm/radeon/Kconfig \
+	drivers/staging/line6/Kconfig \
+	drivers/staging/p9auth/Kconfig \
+	drivers/staging/phison/Kconfig \
+	drivers/staging/b3dfg/Kconfig \
+	drivers/staging/pohmelfs/Kconfig \
+	drivers/staging/dst/Kconfig \
+	drivers/staging/dream/camera/Kconfig \
+	drivers/staging/dream/smd/Kconfig \
+	drivers/staging/dream/Kconfig \
 	drivers/staging/android/Kconfig \
-	drivers/staging/epl/Kconfig \
 	drivers/staging/frontier/Kconfig \
 	drivers/staging/mimio/Kconfig \
+	drivers/staging/rtl8192e/Kconfig \
+	drivers/staging/rtl8192su/Kconfig \
 	drivers/staging/rtl8187se/Kconfig \
 	drivers/staging/altpciechdma/Kconfig \
 	drivers/staging/panel/Kconfig \
 	drivers/staging/asus_oled/Kconfig \
 	drivers/staging/comedi/Kconfig \
+	drivers/staging/rt3090/Kconfig \
 	drivers/staging/rt2870/Kconfig \
 	drivers/staging/rt2860/Kconfig \
 	drivers/staging/otus/Kconfig \
-	drivers/staging/agnx/Kconfig \
 	drivers/staging/poch/Kconfig \
-	drivers/staging/at76_usb/Kconfig \
 	drivers/staging/echo/Kconfig \
 	drivers/staging/wlan-ng/Kconfig \
 	drivers/staging/winbond/Kconfig \
 	drivers/staging/usbip/Kconfig \
+	drivers/staging/cx25821/Kconfig \
 	drivers/staging/go7007/Kconfig \
 	drivers/staging/slicoss/Kconfig \
 	drivers/staging/et131x/Kconfig \
 	drivers/staging/Kconfig \
 	drivers/xen/Kconfig \
+	drivers/vlynq/Kconfig \
 	drivers/uio/Kconfig \
 	drivers/auxdisplay/Kconfig \
 	drivers/dca/Kconfig \
@@ -166,6 +202,7 @@ deps_config := \
 	sound/sh/Kconfig \
 	sound/mips/Kconfig \
 	sound/spi/Kconfig \
+	sound/atmel/Kconfig \
 	sound/arm/Kconfig \
 	sound/aoa/soundbus/Kconfig \
 	sound/aoa/codecs/Kconfig \
@@ -176,6 +213,7 @@ deps_config := \
 	sound/pci/Kconfig \
 	sound/isa/Kconfig \
 	sound/drivers/Kconfig \
+	sound/core/seq/Kconfig \
 	sound/core/Kconfig \
 	sound/oss/dmasound/Kconfig \
 	sound/Kconfig \
@@ -184,8 +222,12 @@ deps_config := \
 	drivers/video/display/Kconfig \
 	drivers/video/backlight/Kconfig \
 	drivers/video/omap/Kconfig \
+	drivers/video/msm/vidc/Kconfig \
+	drivers/video/msm/Kconfig \
 	drivers/video/geode/Kconfig \
+	drivers/gpu/msm/Kconfig \
 	drivers/gpu/drm/Kconfig \
+	drivers/gpu/vga/Kconfig \
 	drivers/char/agp/Kconfig \
 	drivers/video/Kconfig \
 	drivers/media/dvb/frontends/Kconfig \
@@ -201,21 +243,25 @@ deps_config := \
 	drivers/media/dvb/dvb-usb/Kconfig \
 	drivers/media/dvb/ttpci/Kconfig \
 	drivers/media/dvb/Kconfig \
+	drivers/media/radio/si470x/Kconfig \
 	drivers/media/radio/Kconfig \
+	drivers/media/video/msm/Kconfig \
 	drivers/media/video/pwc/Kconfig \
 	drivers/media/video/zc0301/Kconfig \
 	drivers/media/video/sn9c102/Kconfig \
 	drivers/media/video/et61x251/Kconfig \
 	drivers/media/video/usbvideo/Kconfig \
 	drivers/media/video/usbvision/Kconfig \
+	drivers/media/video/cx231xx/Kconfig \
 	drivers/media/video/em28xx/Kconfig \
+	drivers/media/video/hdpvr/Kconfig \
 	drivers/media/video/pvrusb2/Kconfig \
 	drivers/media/video/gspca/gl860/Kconfig \
 	drivers/media/video/gspca/stv06xx/Kconfig \
 	drivers/media/video/gspca/m5602/Kconfig \
 	drivers/media/video/gspca/Kconfig \
 	drivers/media/video/uvc/Kconfig \
-	drivers/media/video/msm/Kconfig \
+	drivers/media/video/saa7164/Kconfig \
 	drivers/media/video/cx18/Kconfig \
 	drivers/media/video/ivtv/Kconfig \
 	drivers/media/video/au0828/Kconfig \
@@ -241,6 +287,7 @@ deps_config := \
 	drivers/w1/masters/Kconfig \
 	drivers/w1/Kconfig \
 	drivers/gpio/Kconfig \
+	drivers/pps/Kconfig \
 	drivers/spi/Kconfig \
 	drivers/i2c/chips/Kconfig \
 	drivers/i2c/busses/Kconfig \
@@ -281,12 +328,17 @@ deps_config := \
 	drivers/isdn/mISDN/Kconfig \
 	drivers/isdn/Kconfig \
 	drivers/s390/net/Kconfig \
+	drivers/ieee802154/Kconfig \
 	drivers/atm/Kconfig \
 	drivers/net/wan/Kconfig \
 	drivers/net/pcmcia/Kconfig \
 	drivers/net/usb/Kconfig \
 	drivers/net/wimax/i2400m/Kconfig \
 	drivers/net/wimax/Kconfig \
+	drivers/net/wireless/bcm4329/Kconfig \
+	drivers/net/wireless/iwmc3200wifi/Kconfig \
+	drivers/net/wireless/wl12xx/Kconfig \
+	drivers/net/wireless/orinoco/Kconfig \
 	drivers/net/wireless/rt2x00/Kconfig \
 	drivers/net/wireless/zd1211rw/Kconfig \
 	drivers/net/wireless/b43legacy/Kconfig \
@@ -294,11 +346,16 @@ deps_config := \
 	drivers/net/wireless/hostap/Kconfig \
 	drivers/net/wireless/iwlwifi/Kconfig \
 	drivers/net/wireless/ipw2x00/Kconfig \
+	drivers/net/wireless/ath/ar9170/Kconfig \
+	drivers/net/wireless/ath/ath9k/Kconfig \
+	drivers/net/wireless/ath/ath5k/Kconfig \
+	drivers/net/wireless/ath/Kconfig \
 	drivers/net/wireless/p54/Kconfig \
 	drivers/net/wireless/Kconfig \
 	drivers/net/tokenring/Kconfig \
 	drivers/net/benet/Kconfig \
 	drivers/net/sfc/Kconfig \
+	drivers/net/stmmac/Kconfig \
 	drivers/net/ixp2000/Kconfig \
 	drivers/net/fs_enet/Kconfig \
 	drivers/net/ibm_newemac/Kconfig \
@@ -314,25 +371,30 @@ deps_config := \
 	drivers/message/fusion/Kconfig \
 	drivers/md/Kconfig \
 	drivers/ata/Kconfig \
+	drivers/scsi/osd/Kconfig \
 	drivers/scsi/device_handler/Kconfig \
 	drivers/scsi/pcmcia/Kconfig \
 	drivers/scsi/arm/Kconfig \
 	drivers/scsi/qla4xxx/Kconfig \
 	drivers/scsi/qla2xxx/Kconfig \
+	drivers/scsi/mpt2sas/Kconfig \
 	drivers/scsi/megaraid/Kconfig.megaraid \
+	drivers/scsi/mvsas/Kconfig \
 	drivers/scsi/aic94xx/Kconfig \
 	drivers/scsi/aic7xxx/Kconfig.aic79xx \
 	drivers/scsi/aic7xxx/Kconfig.aic7xxx \
+	drivers/scsi/be2iscsi/Kconfig \
+	drivers/scsi/bnx2i/Kconfig \
 	drivers/scsi/cxgb3i/Kconfig \
 	drivers/scsi/libsas/Kconfig \
 	drivers/scsi/Kconfig \
 	drivers/ide/Kconfig \
-	drivers/misc/video_core/720p/Kconfig \
 	drivers/misc/semc/gpio_matrix/Kconfig \
 	drivers/misc/semc/vibrator/Kconfig \
 	drivers/misc/semc/simcdetect/Kconfig \
 	drivers/misc/semc/power/Kconfig \
 	drivers/misc/semc/seport/Kconfig \
+	drivers/misc/cb710/Kconfig \
 	drivers/misc/eeprom/Kconfig \
 	drivers/misc/c2port/Kconfig \
 	drivers/misc/Kconfig \
@@ -362,7 +424,6 @@ deps_config := \
 	net/wimax/Kconfig \
 	net/mac80211/Kconfig \
 	net/wireless/Kconfig \
-	net/phonet/Kconfig \
 	net/rxrpc/Kconfig \
 	drivers/bluetooth/Kconfig \
 	net/bluetooth/hidp/Kconfig \
@@ -383,6 +444,8 @@ deps_config := \
 	net/ax25/Kconfig \
 	net/dcb/Kconfig \
 	net/sched/Kconfig \
+	net/ieee802154/Kconfig \
+	net/phonet/Kconfig \
 	net/wanrouter/Kconfig \
 	net/econet/Kconfig \
 	net/lapb/Kconfig \
@@ -397,6 +460,7 @@ deps_config := \
 	net/802/Kconfig \
 	net/atm/Kconfig \
 	net/tipc/Kconfig \
+	net/rds/Kconfig \
 	net/sctp/Kconfig \
 	net/dccp/ccids/Kconfig \
 	net/dccp/Kconfig \
@@ -495,7 +559,7 @@ deps_config := \
 include/config/auto.conf: \
 	$(deps_config)
 
-ifneq "$(KERNELVERSION)" "2.6.29"
+ifneq "$(KERNELVERSION)" "2.6.32.9"
 include/config/auto.conf: FORCE
 endif
 ifneq "$(ARCH)" "arm"

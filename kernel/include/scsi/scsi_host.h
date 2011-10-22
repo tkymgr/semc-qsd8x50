@@ -478,6 +478,15 @@ struct scsi_host_template {
 	 * module_init/module_exit.
 	 */
 	struct list_head legacy_hosts;
+
+	/*
+	 * Vendor Identifier associated with the host
+	 *
+	 * Note: When specifying vendor_id, be sure to read the
+	 *   Vendor Type and ID formatting requirements specified in
+	 *   scsi_netlink.h
+	 */
+	u64 vendor_id;
 };
 
 /*
@@ -668,6 +677,12 @@ struct Scsi_Host {
 	void *shost_data;
 
 	/*
+	 * Points to the physical bus device we'd use to do DMA
+	 * Needed just in case we have virtual hosts.
+	 */
+	struct device *dma_dev;
+
+	/*
 	 * We should ensure that this is aligned, both for better performance
 	 * and also because some compilers (m68k) don't automatically force
 	 * alignment to a long boundary.
@@ -711,7 +726,9 @@ extern int scsi_queue_work(struct Scsi_Host *, struct work_struct *);
 extern void scsi_flush_work(struct Scsi_Host *);
 
 extern struct Scsi_Host *scsi_host_alloc(struct scsi_host_template *, int);
-extern int __must_check scsi_add_host(struct Scsi_Host *, struct device *);
+extern int __must_check scsi_add_host_with_dma(struct Scsi_Host *,
+					       struct device *,
+					       struct device *);
 extern void scsi_scan_host(struct Scsi_Host *);
 extern void scsi_rescan_device(struct device *);
 extern void scsi_remove_host(struct Scsi_Host *);
@@ -721,6 +738,12 @@ extern struct Scsi_Host *scsi_host_lookup(unsigned short);
 extern const char *scsi_host_state_name(enum scsi_host_state);
 
 extern u64 scsi_calculate_bounce_limit(struct Scsi_Host *);
+
+static inline int __must_check scsi_add_host(struct Scsi_Host *host,
+					     struct device *dev)
+{
+	return scsi_add_host_with_dma(host, dev, dev);
+}
 
 static inline struct device *scsi_get_device(struct Scsi_Host *shost)
 {
@@ -788,24 +811,24 @@ static inline unsigned int scsi_host_get_prot(struct Scsi_Host *shost)
 
 static inline unsigned int scsi_host_dif_capable(struct Scsi_Host *shost, unsigned int target_type)
 {
-	switch (target_type) {
-	case 1: return shost->prot_capabilities & SHOST_DIF_TYPE1_PROTECTION;
-	case 2: return shost->prot_capabilities & SHOST_DIF_TYPE2_PROTECTION;
-	case 3: return shost->prot_capabilities & SHOST_DIF_TYPE3_PROTECTION;
-	}
+	static unsigned char cap[] = { 0,
+				       SHOST_DIF_TYPE1_PROTECTION,
+				       SHOST_DIF_TYPE2_PROTECTION,
+				       SHOST_DIF_TYPE3_PROTECTION };
 
-	return 0;
+	return shost->prot_capabilities & cap[target_type] ? target_type : 0;
 }
 
 static inline unsigned int scsi_host_dix_capable(struct Scsi_Host *shost, unsigned int target_type)
 {
-	switch (target_type) {
-	case 0: return shost->prot_capabilities & SHOST_DIX_TYPE0_PROTECTION;
-	case 1: return shost->prot_capabilities & SHOST_DIX_TYPE1_PROTECTION;
-	case 2: return shost->prot_capabilities & SHOST_DIX_TYPE2_PROTECTION;
-	case 3: return shost->prot_capabilities & SHOST_DIX_TYPE3_PROTECTION;
-	}
+#if defined(CONFIG_BLK_DEV_INTEGRITY)
+	static unsigned char cap[] = { SHOST_DIX_TYPE0_PROTECTION,
+				       SHOST_DIX_TYPE1_PROTECTION,
+				       SHOST_DIX_TYPE2_PROTECTION,
+				       SHOST_DIX_TYPE3_PROTECTION };
 
+	return shost->prot_capabilities & cap[target_type];
+#endif
 	return 0;
 }
 

@@ -850,7 +850,7 @@ static const struct v4l2_ioctl_ops msm_ioctl_ops = {
 static int msm_v4l2_video_dev_init(struct video_device *pvd)
 {
 	strncpy(pvd->name, MSM_APPS_ID_V4L2, sizeof(pvd->name));
-	pvd->vfl_type = VID_TYPE_CAPTURE;
+	pvd->vfl_type = 1;
 	pvd->fops = &msm_v4l2_fops;
 	pvd->release = msm_v4l2_release_dev;
 	pvd->minor = -1;

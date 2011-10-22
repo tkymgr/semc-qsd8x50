@@ -5,7 +5,6 @@
  * Copyright (C) 2005 Sensoria Corp
  *	   Derived from the unified SMC91x driver by Nicolas Pitre
  *	   and the smsc911x.c reference driver by SMSC
- * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -81,9 +80,6 @@ static const char version[] =
 
 #include "smc911x.h"
 
-/* Global chip id variable */
-static unsigned int current_chip_id;
-
 /*
  * Transmit timeout, default 5 seconds.
  */
@@ -91,7 +87,6 @@ static int watchdog = 5000;
 module_param(watchdog, int, 0400);
 MODULE_PARM_DESC(watchdog, "transmit timeout in milliseconds");
 
-#define TX_FIFO_KB_9221		4
 static int tx_fifo_kb=8;
 module_param(tx_fifo_kb, int, 0400);
 MODULE_PARM_DESC(tx_fifo_kb,"transmit FIFO size in KB (1<x<15)(default=8)");
@@ -173,29 +168,6 @@ static void PRINT_PKT(u_char *buf, int length)
 	SMC_SET_INT_EN((lp), __mask);			\
 } while (0)
 
-static void smc911x_phy_powerup(struct net_device *dev, int phy)
-{
-	struct smc911x_local *lp = netdev_priv(dev);
-	unsigned int bmcr, bmsr;
-	int timeout;
-
-	SMC_GET_PHY_BMCR(lp, phy, bmcr);
-	bmcr &= ~BMCR_PDOWN;
-	SMC_SET_PHY_BMCR(lp, phy, bmcr);
-	if (bmcr & BMCR_ANENABLE) {
-		timeout = 1000;
-		while (--timeout) {
-			SMC_GET_PHY_BMSR(lp, phy, bmsr);
-			if (bmsr & BMSR_ANEGCOMPLETE)
-				break;
-			udelay(10);
-		}
-		/* If timeout hits, it proceeds to software reset and
-		times out there since the phy params are not set due to
-		failure of auto negotiation */
-	}
-}
-
 /*
  * this does a soft reset on the device
  */
@@ -221,9 +193,6 @@ static void smc911x_reset(struct net_device *dev)
 			return;
 		}
 	}
-
-	/* Powerup the phy before the actual reset */
-	smc911x_phy_powerup(dev, lp->mii.phy_id);
 
 	/* Disable all interrupts */
 	spin_lock_irqsave(&lp->lock, flags);
@@ -269,8 +238,6 @@ static void smc911x_reset(struct net_device *dev)
 	SMC_SET_FLOW(lp, FLOW_FCPT_ | FLOW_FCEN_);
 	SMC_SET_AFC_CFG(lp, lp->afc_cfg);
 
-	if (current_chip_id == CHIP_9221)
-		SMC_SET_COECR(lp, COE_CR_TXCOE_EN_ | COE_CR_RXCOE_EN_);
 
 	/* Set to LED outputs */
 	SMC_SET_GPIO_CFG(lp, 0x70070000);
@@ -279,10 +246,7 @@ static void smc911x_reset(struct net_device *dev)
 	 * Deassert IRQ for 1*10us for edge type interrupts
 	 * and drive IRQ pin push-pull
 	 */
-	if (current_chip_id == CHIP_9221)
-		irq_cfg = (10 << 24) | INT_CFG_IRQ_EN_ | INT_CFG_IRQ_TYPE_;
-	else
-		irq_cfg = (1 << 24) | INT_CFG_IRQ_EN_ | INT_CFG_IRQ_TYPE_;
+	irq_cfg = (1 << 24) | INT_CFG_IRQ_EN_ | INT_CFG_IRQ_TYPE_;
 #ifdef SMC_DYNAMIC_BUS_CONFIG
 	if (lp->cfg.irq_polarity)
 		irq_cfg |= INT_CFG_IRQ_POL_;
@@ -318,9 +282,7 @@ static void smc911x_enable(struct net_device *dev)
 	cfg &= HW_CFG_TX_FIF_SZ_ | 0xFFF;
 	cfg |= HW_CFG_SF_;
 	SMC_SET_HW_CFG(lp, cfg);
-
 	SMC_SET_FIFO_TDA(lp, 0xFF);
-
 	/* Update TX stats on every 64 packets received or every 1 sec */
 	SMC_SET_FIFO_TSL(lp, 64);
 	SMC_SET_GPT_CFG(lp, GPT_CFG_TIMER_EN_ | 10000);
@@ -473,10 +435,7 @@ static inline void	 smc911x_rcv(struct net_device *dev)
 		}
 #else
 		SMC_SET_RX_CFG(lp, RX_CFG_RX_END_ALGN4_ | ((2<<8) & RX_CFG_RXDOFF_));
-		if (current_chip_id == CHIP_9221)
-			SMC_PULL_DIRECT_DATA(lp, data, pkt_len+2+3);
-		else
-			SMC_PULL_DATA(lp, data, pkt_len+2+3);
+		SMC_PULL_DATA(lp, data, pkt_len+2+3);
 
 		DBG(SMC_DEBUG_PKTS, "%s: Received packet\n", dev->name);
 		PRINT_PKT(data, ((pkt_len - 4) <= 64) ? pkt_len - 4 : 64);
@@ -537,11 +496,7 @@ static void smc911x_hardware_send_pkt(struct net_device *dev)
 	SMC_PUSH_DATA(lp, buf, len);
 	/* DMA complete IRQ will free buffer and set jiffies */
 #else
-	if (current_chip_id == CHIP_9221)
-		SMC_PUSH_DIRECT_DATA(lp, buf, len);
-	else
-		SMC_PUSH_DATA(lp, buf, len);
-
+	SMC_PUSH_DATA(lp, buf, len);
 	dev->trans_start = jiffies;
 	dev_kfree_skb_irq(skb);
 #endif
@@ -578,11 +533,7 @@ static int smc911x_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		DBG(SMC_DEBUG_TX, "%s: Disabling data flow due to low FIFO space (%d)\n",
 			dev->name, free);
 		/* Reenable when at least 1 packet of size MTU present */
-	if (current_chip_id == CHIP_9221)
-		SMC_SET_FIFO_TDA(lp, 0x30);
-	else
 		SMC_SET_FIFO_TDA(lp, (SMC911X_TX_FIFO_LOW_THRESHOLD)/64);
-
 		lp->tx_throttle = 1;
 		netif_stop_queue(dev);
 	}
@@ -602,7 +553,7 @@ static int smc911x_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		dev->stats.tx_dropped++;
 		spin_unlock_irqrestore(&lp->lock, flags);
 		dev_kfree_skb(skb);
-		return 0;
+		return NETDEV_TX_OK;
 	}
 
 #ifdef SMC_USE_DMA
@@ -615,7 +566,7 @@ static int smc911x_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 			lp->pending_tx_skb = skb;
 			netif_stop_queue(dev);
 			spin_unlock_irqrestore(&lp->lock, flags);
-			return 0;
+			return NETDEV_TX_OK;
 		} else {
 			DBG(SMC_DEBUG_TX | SMC_DEBUG_DMA, "%s: Activating Tx DMA\n", dev->name);
 			lp->txdma_active = 1;
@@ -626,7 +577,7 @@ static int smc911x_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 	smc911x_hardware_send_pkt(dev);
 	spin_unlock_irqrestore(&lp->lock, flags);
 
-	return 0;
+	return NETDEV_TX_OK;
 }
 
 /*
@@ -962,13 +913,6 @@ static void smc911x_phy_configure(struct work_struct *work)
 	SMC_SET_PHY_INT_MASK(lp, phyaddr, PHY_INT_MASK_ENERGY_ON_ |
 		 PHY_INT_MASK_ANEG_COMP_ | PHY_INT_MASK_REMOTE_FAULT_ |
 		 PHY_INT_MASK_LINK_DOWN_);
-
-	if (current_chip_id == CHIP_9221) {
-		/* Enable AutoMDIX in the special ctrl/status indications reg */
-		SMC_SET_PHY_SPL_CTRL_STS(lp, phyaddr,
-			PHY_SPL_CTRL_STS_AMDIX_STP_ |
-			PHY_SPL_CTRL_STS_AMDIX_EN_);
-	}
 
 	/* If the user requested no auto neg, then go set his request */
 	if (lp->mii.force_media) {
@@ -1601,7 +1545,7 @@ smc911x_ethtool_getdrvinfo(struct net_device *dev, struct ethtool_drvinfo *info)
 {
 	strncpy(info->driver, CARDNAME, sizeof(info->driver));
 	strncpy(info->version, version, sizeof(info->version));
-	strncpy(info->bus_info, dev->dev.parent->bus_id, sizeof(info->bus_info));
+	strncpy(info->bus_info, dev_name(dev->dev.parent), sizeof(info->bus_info));
 }
 
 static int smc911x_ethtool_nwayreset(struct net_device *dev)
@@ -1830,6 +1774,20 @@ static int __devinit smc911x_findirq(struct net_device *dev)
 	return probe_irq_off(cookie);
 }
 
+static const struct net_device_ops smc911x_netdev_ops = {
+	.ndo_open		= smc911x_open,
+	.ndo_stop		= smc911x_close,
+	.ndo_start_xmit		= smc911x_hard_start_xmit,
+	.ndo_tx_timeout		= smc911x_timeout,
+	.ndo_set_multicast_list	= smc911x_set_multicast_list,
+	.ndo_change_mtu		= eth_change_mtu,
+	.ndo_validate_addr	= eth_validate_addr,
+	.ndo_set_mac_address	= eth_mac_addr,
+#ifdef CONFIG_NET_POLL_CONTROLLER
+	.ndo_poll_controller	= smc911x_poll_controller,
+#endif
+};
+
 /*
  * Function: smc911x_probe(unsigned long ioaddr)
  *
@@ -1886,8 +1844,6 @@ static int __devinit smc911x_probe(struct net_device *dev)
 		printk(KERN_ERR "Unknown chip ID %04x\n", chip_id);
 		retval = -ENODEV;
 		goto err_out;
-	} else {
-		current_chip_id = chip_id;
 	}
 	version_string = chip_ids[i].name;
 
@@ -1896,10 +1852,6 @@ static int __devinit smc911x_probe(struct net_device *dev)
 
 	/* At this point I'll assume that the chip is an SMC911x. */
 	DBG(SMC_DEBUG_MISC, "%s: Found a %s\n", CARDNAME, chip_ids[i].name);
-
-	/* Set a different TX FIFO size for 9221 chip */
-	if (current_chip_id == CHIP_9221)
-		tx_fifo_kb = TX_FIFO_KB_9221;
 
 	/* Validate the TX FIFO size requested */
 	if ((tx_fifo_kb < 2) || (tx_fifo_kb > 14)) {
@@ -2002,16 +1954,9 @@ static int __devinit smc911x_probe(struct net_device *dev)
 	/* Fill in the fields of the device structure with ethernet values. */
 	ether_setup(dev);
 
-	dev->open = smc911x_open;
-	dev->stop = smc911x_close;
-	dev->hard_start_xmit = smc911x_hard_start_xmit;
-	dev->tx_timeout = smc911x_timeout;
+	dev->netdev_ops = &smc911x_netdev_ops;
 	dev->watchdog_timeo = msecs_to_jiffies(watchdog);
-	dev->set_multicast_list = smc911x_set_multicast_list;
 	dev->ethtool_ops = &smc911x_ethtool_ops;
-#ifdef CONFIG_NET_POLL_CONTROLLER
-	dev->poll_controller = smc911x_poll_controller;
-#endif
 
 	INIT_WORK(&lp->phy_configure, smc911x_phy_configure);
 	lp->mii.phy_id_mask = 0x1f;

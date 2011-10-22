@@ -20,10 +20,10 @@
 #include <linux/interrupt.h>
 #include <mach/irqs.h>
 #include "msm_vfe8x_proc.h"
+#include <linux/pm_qos_params.h>
 
 #define ON  1
 #define OFF 0
-#define MSM_AXI_QOS_PREVIEW	128000
 
 static void     *vfe_syncdata;
 
@@ -44,10 +44,8 @@ static void vfe_release(struct platform_device *dev)
 {
 	msm_camio_disable(dev);
 	vfe_cmd_release(dev);
-	/* release AXI frequency request */
-	release_axi_qos();
+	update_axi_qos(PM_QOS_DEFAULT_VALUE);
 	vfe_syncdata = NULL;
-	release_axi_qos();
 }
 
 static void vfe_config_axi(int mode,
@@ -431,6 +429,11 @@ static int vfe_proc_general(struct msm_vfe_command_8k *cmd)
 	case VFE_CMD_ID_FRAME_SKIP_UPDATE: {
 		struct vfe_cmd_frame_skip_update fskip;
 			CHECKED_COPY_FROM_USER(&fskip);
+			/* Start recording */
+			if (fskip.output2Pattern == 0xffffffff)
+				update_axi_qos(MSM_AXI_QOS_RECORDING);
+			 else if (fskip.output2Pattern == 0)
+				update_axi_qos(MSM_AXI_QOS_PREVIEW);
 
 		vfe_frame_skip_update(&fskip);
 	}
@@ -732,13 +735,6 @@ static int vfe_init(struct msm_vfe_callback *presp, struct platform_device *dev)
 
 	/* Bring up all the required GPIOs and Clocks */
 	rc = msm_camio_enable(dev);
-	if (rc < 0)
-		return rc;
-
-	/* Set required axi bus frequency */
-	rc = request_axi_qos(MSM_AXI_QOS_PREVIEW);
-	if (rc < 0)
-		CDBG("request of axi qos failed\n");
 
 	return rc;
 }
@@ -751,4 +747,13 @@ void msm_camvfe_fn_init(struct msm_camvfe_fn *fptr, void *data)
 	fptr->vfe_disable = vfe_disable;
 	fptr->vfe_release = vfe_release;
 	vfe_syncdata = data;
+}
+
+void msm_camvpe_fn_init(struct msm_camvpe_fn *fptr, void *data)
+{
+	fptr->vpe_reg		= NULL;
+	fptr->send_frame_to_vpe	= NULL;
+	fptr->vpe_config	= NULL;
+	fptr->vpe_cfg_update	= NULL;
+	fptr->dis		= NULL;
 }

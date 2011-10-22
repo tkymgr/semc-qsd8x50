@@ -91,32 +91,23 @@ struct ll_struct {
 #ifdef CONFIG_SERIAL_MSM_HS
 void msm_hs_request_clock_off(struct uart_port *uport);
 void msm_hs_request_clock_on(struct uart_port *uport);
-void msm_hs_set_mctrl_locked(struct uart_port *uport, unsigned int mctrl);
 
 static void __ll_msm_serial_clock_on(struct tty_struct *tty) {
 	struct uart_state *state = tty->driver_data;
-	struct uart_port *port = state->port;
+	struct uart_port *port = state->uart_port;
 
 	msm_hs_request_clock_on(port);
 }
 
 static void __ll_msm_serial_clock_request_off(struct tty_struct *tty) {
 	struct uart_state *state = tty->driver_data;
-	struct uart_port *port = state->port;
+	struct uart_port *port = state->uart_port;
 
 	msm_hs_request_clock_off(port);
-}
-
-static void __ll_msm_serial_set_rts(struct tty_struct *tty) {
-	struct uart_state *state = tty->driver_data;
-	struct uart_port *port = state->port;
-
-	msm_hs_set_mctrl_locked(port, 0);
 }
 #else
 static inline void __ll_msm_serial_clock_on(struct tty_struct *tty) {}
 static inline void __ll_msm_serial_clock_request_off(struct tty_struct *tty) {}
-static inline void __ll_msm_serial_set_rts(struct tty_struct *tty) {}
 #endif
 
 static int ll_enqueue(struct hci_uart *hu, struct sk_buff *skb);
@@ -317,6 +308,7 @@ static void ll_device_want_to_sleep(struct hci_uart *hu)
 	unsigned long flags;
 	struct ll_struct *ll = hu->priv;
 
+
 	BT_DBG("hu %p", hu);
 
 	/* lock hcill state */
@@ -335,7 +327,6 @@ static void ll_device_want_to_sleep(struct hci_uart *hu)
 	/* update state */
 	ll->hcill_state = HCILL_ASLEEP;
 
-	__ll_msm_serial_set_rts(hu->tty);
 out:
 	spin_unlock_irqrestore(&ll->hcill_lock, flags);
 
@@ -460,6 +451,7 @@ static int ll_recv(struct hci_uart *hu, void *data, int count)
 	BT_DBG("hu %p count %d rx_state %ld rx_count %ld", hu, count, ll->rx_state, ll->rx_count);
 
 	ptr = data;
+
 	while (count) {
 		if (ll->rx_count) {
 			len = min_t(unsigned int, ll->rx_count, count);

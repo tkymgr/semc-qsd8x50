@@ -95,6 +95,11 @@ struct reg_struct {
 	uint8_t reg_0x1717; /*0x1717*/
 	uint8_t reg_0x1718; /*0x1718*/
 	uint8_t reg_0x1719; /*0x1719*/
+	uint8_t reg_0x3210;/*0x3210*/
+	uint8_t reg_0x111; /*0x111*/
+	uint8_t reg_0x3410;  /*0x3410*/
+	uint8_t reg_0x3098;
+	uint8_t reg_0x309D;
 	uint8_t reg_0x0200;
 	uint8_t reg_0x0201;
 	};
@@ -132,7 +137,8 @@ enum mt9p012_reg_update {
 
 enum sensor_revision_t {
 	VX6953_STM5M0EDOF_CUT_1,
-	VX6953_STM5M0EDOF_CUT_2
+	VX6953_STM5M0EDOF_CUT_2,
+	VX6953_STM5M0EDOF_CUT_3
 };
 enum edof_mode_t {
 	VX6953_EDOF_DISABLE,       /* 0x00 */

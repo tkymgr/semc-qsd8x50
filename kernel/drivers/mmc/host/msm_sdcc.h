@@ -14,11 +14,6 @@
 #ifndef _MSM_SDCC_H
 #define _MSM_SDCC_H
 
-#define MSMSDCC_CRCI_SDC1	6
-#define MSMSDCC_CRCI_SDC2	7
-#define MSMSDCC_CRCI_SDC3	12
-#define MSMSDCC_CRCI_SDC4	13
-
 #define MMCIPOWER		0x000
 #define MCI_PWR_OFF		0x00
 #define MCI_PWR_UP		0x02
@@ -158,6 +153,12 @@
 	MCI_DATATIMEOUTMASK|MCI_TXUNDERRUNMASK|MCI_RXOVERRUNMASK|	\
 	MCI_CMDRESPENDMASK|MCI_CMDSENTMASK|MCI_DATAENDMASK|MCI_PROGDONEMASK)
 
+#define MCI_IRQ_PIO 	\
+	(MCI_RXDATAAVLBLMASK | MCI_TXDATAAVLBLMASK | 	\
+	MCI_RXFIFOEMPTYMASK | MCI_TXFIFOEMPTYMASK | MCI_RXFIFOFULLMASK |\
+	MCI_TXFIFOFULLMASK | MCI_RXFIFOHALFFULLMASK |			\
+	MCI_TXFIFOHALFEMPTYMASK | MCI_RXACTIVEMASK | MCI_TXACTIVEMASK)
+
 /*
  * The size of the FIFO in bytes.
  */
@@ -166,6 +167,14 @@
 #define MCI_FIFOHALFSIZE (MCI_FIFOSIZE / 2)
 
 #define NR_SG		32
+
+#define MSM_MMC_IDLE_TIMEOUT	10000 /* msecs */
+
+/*
+ * Set the request timeout to 10secs to allow
+ * bad cards/controller to respond.
+ */
+#define MSM_MMC_REQ_TIMEOUT	10000 /* msecs */
 
 struct clk;
 
@@ -190,7 +199,7 @@ struct msmsdcc_dma_data {
 	struct msmsdcc_host		*host;
 	int				busy; /* Set if DM is busy */
 	unsigned int 			result;
-	struct msm_dmov_errdata 	*err;
+	struct msm_dmov_errdata		err;
 };
 
 struct msmsdcc_pio_data {
@@ -207,7 +216,6 @@ struct msmsdcc_curr_req {
 	unsigned int		xfer_remain;	/* Bytes remaining to send */
 	unsigned int		data_xfered;	/* Bytes acked by BLKEND irq */
 	int			got_dataend;
-	int			got_datablkend;
 	int			user_pages;
 };
 
@@ -238,9 +246,6 @@ struct msmsdcc_host {
 	unsigned int		oldstat;
 
 	struct msmsdcc_dma_data	dma;
-
-	unsigned int		pre_cmd_with_data;
-
 	struct msmsdcc_pio_data	pio;
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
@@ -248,14 +253,8 @@ struct msmsdcc_host {
 	int polling_enabled;
 #endif
 
-#ifdef CONFIG_MMC_MSM7X00A_RESUME_IN_WQ
-	struct work_struct	resume_task;
-#endif
 	struct tasklet_struct 	dma_tlet;
 
-#ifdef CONFIG_MMC_AUTO_SUSPEND
-	unsigned long           suspended;
-#endif
 	unsigned int prog_scan;
 	unsigned int prog_enable;
 
@@ -269,7 +268,15 @@ struct msmsdcc_host {
 	unsigned int	mci_irqenable;
 	unsigned int	dummy_52_needed;
 	unsigned int	dummy_52_state;
+	unsigned int	sdio_irq_disabled;
+	struct wake_lock	sdio_wlock;
+	struct wake_lock	sdio_suspend_wlock;
+	unsigned int    sdcc_suspending;
 
+	unsigned int sdcc_irq_disabled;
+	struct timer_list req_tout_timer;
 };
+
+int msmsdcc_set_pwrsave(struct mmc_host *mmc, int pwrsave);
 
 #endif

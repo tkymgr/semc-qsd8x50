@@ -29,15 +29,11 @@ static void console_early_suspend(struct early_suspend *h)
 	orig_fgconsole = fg_console;
 	if (vc_allocate(EARLY_SUSPEND_CONSOLE))
 		goto err;
-
-	/* cursor off */
-	vc_cons[EARLY_SUSPEND_CONSOLE].d->vc_deccm = 0;
-
 	if (set_console(EARLY_SUSPEND_CONSOLE))
 		goto err;
 	release_console_sem();
 
-	if (vt_waitactive(EARLY_SUSPEND_CONSOLE))
+	if (vt_waitactive(EARLY_SUSPEND_CONSOLE + 1))
 		pr_warning("console_early_suspend: Can't switch VCs.\n");
 	return;
 err:
@@ -56,7 +52,7 @@ static void console_late_resume(struct early_suspend *h)
 		return;
 	}
 
-	if (vt_waitactive(orig_fgconsole))
+	if (vt_waitactive(orig_fgconsole + 1))
 		pr_warning("console_late_resume: Can't switch VCs.\n");
 }
 

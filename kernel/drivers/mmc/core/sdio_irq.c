@@ -6,7 +6,6 @@
  * Copyright:   MontaVista Software Inc.
  *
  * Copyright 2008 Pierre Ossman
- * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -181,13 +180,7 @@ static int sdio_card_irq_put(struct mmc_card *card)
 
 	if (!--host->sdio_irqs) {
 		atomic_set(&host->sdio_irq_thread_abort, 1);
-		if (host->claimed) {
-			mmc_release_host(host);
-			kthread_stop(host->sdio_irq_thread);
-			mmc_claim_host(host);
-		} else {
-			kthread_stop(host->sdio_irq_thread);
-		}
+		kthread_stop(host->sdio_irq_thread);
 	}
 
 	return 0;

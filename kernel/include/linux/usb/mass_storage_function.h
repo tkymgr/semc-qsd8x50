@@ -18,25 +18,18 @@
 #ifndef __LINUX_USB_MASS_STORAGE_FUNCTION_H__
 #define __LINUX_USB_MASS_STORAGE_FUNCTION_H__
 
-struct usb_mass_storage_lun_config {
-	bool	is_cdrom;
-	int	shift_size;
-	bool	can_stall;
-};
-
 /* platform data for USB mass storage function driver */
 struct usb_mass_storage_platform_data {
 	/* number of logical units */
-	int					nluns;
+	int         nluns;
 	
 	/* buffer size for bulk transfers */
-	u32					buf_size;
+	u32			buf_size;
 	
 	/* values for UMS DO_INQUIRY command */
-	const char  				*vendor;
-	const char  				*product;
-	int					release;
-	struct usb_mass_storage_lun_config	*lun_conf;
+	const char  *vendor;
+	const char  *product;
+	int			release;
 };
 
 #endif /* __LINUX_USB_MASS_STORAGE_FUNCTION_H__ */

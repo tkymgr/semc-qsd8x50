@@ -59,10 +59,6 @@ enum {
 #define NR_MAX_WINDOW_SIZE		127			/* Maximum Window Allowable - 127 */
 #define	NR_MAX_PACKET_SIZE		236			/* Maximum Packet Length - 236 */
 
-struct nr_private {
-	struct net_device_stats	stats;
-};
-
 struct nr_sock {
 	struct sock		sock;
 	ax25_address		user_addr, source_addr, dest_addr;
@@ -136,6 +132,8 @@ static __inline__ void nr_node_put(struct nr_node *nr_node)
 static __inline__ void nr_neigh_put(struct nr_neigh *nr_neigh)
 {
 	if (atomic_dec_and_test(&nr_neigh->refcount)) {
+		if (nr_neigh->ax25)
+			ax25_cb_put(nr_neigh->ax25);
 		kfree(nr_neigh->digipeat);
 		kfree(nr_neigh);
 	}

@@ -140,7 +140,6 @@ enum {
 #define SMSM_MODEM_WAIT        0x02000000
 #define SMSM_MODEM_BREAK       0x04000000
 #define SMSM_MODEM_CONTINUE    0x08000000
-#define SMSM_APPS_CRASHDUMP    0x10000000
 #define SMSM_UNKNOWN           0x80000000
 
 #define SMSM_WKUP_REASON_RPC	0x00000001
@@ -163,16 +162,6 @@ void smsm_print_sleep_info(uint32_t sleep_delay, uint32_t sleep_limit,
 void smsm_reset_modem(unsigned mode);
 void smsm_reset_modem_cont(void);
 void smd_sleep_exit(void);
-
-#ifdef CONFIG_KEXEC
-void smsm_notify_apps_crashdump(void);
-void smsm_ack_amss_crash(void);
-void smsm_notify_system_reboot(void);
-#endif
-extern void smsm_wait_for_modem(void);
-#ifdef CONFIG_CAPTURE_KERNEL
-void smsm_wait_for_modem_reset(void);
-#endif
 
 #define SMEM_NUM_SMD_STREAM_CHANNELS        64
 #define SMEM_NUM_SMD_BLOCK_CHANNELS         64
@@ -319,7 +308,8 @@ struct smd_half_channel {
 
 extern spinlock_t smem_lock;
 
-extern int (*msm_check_for_modem_crash)(void);
+
+int smsm_check_for_modem_crash(void);
 void *smem_find(unsigned id, unsigned size);
 void *smem_get_entry(unsigned id, unsigned *size);
 void smd_diag(void);

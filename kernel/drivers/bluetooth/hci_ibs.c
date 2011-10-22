@@ -134,7 +134,7 @@ struct ibs_struct {
 static void __ibs_msm_serial_clock_on(struct tty_struct *tty)
 {
 	struct uart_state *state = tty->driver_data;
-	struct uart_port *port = state->port;
+	struct uart_port *port = state->uart_port;
 
 	msm_hs_request_clock_on(port);
 }
@@ -142,7 +142,7 @@ static void __ibs_msm_serial_clock_on(struct tty_struct *tty)
 static void __ibs_msm_serial_clock_request_off(struct tty_struct *tty)
 {
 	struct uart_state *state = tty->driver_data;
-	struct uart_port *port = state->port;
+	struct uart_port *port = state->uart_port;
 
 	msm_hs_request_clock_off(port);
 }

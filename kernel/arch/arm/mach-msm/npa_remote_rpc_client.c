@@ -1,72 +1,18 @@
 /* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Alternatively, and instead of the terms immediately above, this
- * software may be relicensed by the recipient at their option under the
- * terms of the GNU General Public License version 2 ("GPL") and only
- * version 2.  If the recipient chooses to relicense the software under
- * the GPL, then the recipient shall replace all of the text immediately
- * above and including this paragraph with the text immediately below
- * and between the words START OF ALTERNATE GPL TERMS and END OF
- * ALTERNATE GPL TERMS and such notices and license terms shall apply
- * INSTEAD OF the notices and licensing terms given above.
- *
- * START OF ALTERNATE GPL TERMS
- *
- * Copyright (c) 2010, Code Aurora Forum. All rights reserved.
- *
- * This software was originally licensed under the Code Aurora Forum
- * Inc. Dual BSD/GPL License version 1.1 and relicensed as permitted
- * under the terms thereof by a recipient under the General Public
- * License Version 2.
- *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301, USA.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * END OF ALTERNATE GPL TERMS
  *
  */
 
@@ -77,8 +23,10 @@
 #include <linux/kernel.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
-#include <linux/npa_remote.h>
 #include <mach/msm_rpcrouter.h>
+
+#include "npa_remote.h"
+#include "proc_comm.h"
 
 #define NPA_REMOTEPROG			0x300000A4
 #define NPA_REMOTEVERS			0x00010001
@@ -446,6 +394,23 @@ int npa_remote_destroy_client(void *handle)
 }
 EXPORT_SYMBOL(npa_remote_destroy_client);
 
+#ifdef CONFIG_MSM_NPA_PROC_COMM
+int npa_remote_issue_required_request(void *handle, unsigned int state,
+		unsigned int *new_state)
+{
+	int err = 0;
+
+	err = msm_proc_comm(PCOM_NPA_ISSUE_REQUIRED_REQUEST,
+			(unsigned *)&handle, (unsigned *)&state);
+
+	*new_state = state;
+	if (err) {
+		pr_err("NPA Remote func %s returned error %d\n", __func__, err);
+		BUG();
+	}
+	return err;
+}
+#else
 static int npa_remote_issue_required_request_arg_fn(
 		struct msm_rpc_client *client,
 		struct msm_rpc_xdr *xdr, void *data)
@@ -498,6 +463,7 @@ int npa_remote_issue_required_request(void *handle, unsigned int state,
 
 	return ret.result;
 }
+#endif /* CONFIG_MSM_NPA_PROC_COMM */
 EXPORT_SYMBOL(npa_remote_issue_required_request);
 
 #define NPA_PROTOCOL_ONCRPC "/protocols/modem/oncrpc/1.0.0"
@@ -551,9 +517,30 @@ static int npa_remote_verify_cb(void *context, unsigned int size,
 	return 0;
 }
 
+#define NPA_PROC_COMM_VERSION_MAJOR 1
+#define NPA_PROC_COMM_VERSION_MINOR 0
+
 static void npa_remote_verify(struct work_struct *work)
 {
-	int err = npa_remote_init(NPA_REMOTE_VERSION_MAJOR,
+	int err = 0;
+
+	/* PROC COMM is used for issuing requests when enabled. However,
+	 * NPA remoting needs to be initialized with many parameters and
+	 * ONCRPC will be used to initialize and create remote node and
+	 * clients.
+	 */
+
+#ifdef CONFIG_MSM_NPA_PROC_COMM
+	int major = NPA_PROC_COMM_VERSION_MAJOR;
+	int minor = NPA_PROC_COMM_VERSION_MINOR;
+
+	/* Initialize PROC COMM transport layer for NPA. */
+	err = msm_proc_comm(PCOM_NPA_INIT,
+			(unsigned *)&major, (unsigned *)&minor);
+	BUG_ON(err);
+#endif
+	/* Initialize ONCRPC transport layer for NPA. */
+	err = npa_remote_init(NPA_REMOTE_VERSION_MAJOR,
 				NPA_REMOTE_VERSION_MINOR,
 				NPA_REMOTE_VERSION_BUILD,
 				npa_remote_verify_cb, NULL);

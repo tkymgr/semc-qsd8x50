@@ -29,17 +29,23 @@
 #include <linux/io.h>
 #include <linux/termios.h>
 #include <linux/ctype.h>
-#include <linux/debug_locks.h>
 #include <mach/msm_smd.h>
 #include <mach/msm_iomap.h>
 #include <mach/system.h>
+#include <linux/remote_spinlock.h>
+
+#include <asm/cacheflush.h>
 
 #include "smd_private.h"
 #include "proc_comm.h"
 #include "modem_notifier.h"
 
-#if defined(CONFIG_ARCH_QSD8X50)
+#if defined(CONFIG_ARCH_QSD8X50) || defined(CONFIG_ARCH_MSM8X60)
 #define CONFIG_QDSP6 1
+#endif
+
+#if defined(CONFIG_ARCH_MSM8X60)
+#define CONFIG_DSPS 1
 #endif
 
 #define MODULE_NAME "msm_smd"
@@ -77,7 +83,7 @@ enum {
 
 enum {
 	SMD_APPS_QDSP_I = 1,
-	SMD_MODEM_QDSP_I = 2
+	SMD_APPS_DSPS_I = 3,
 };
 
 static int msm_smd_debug_mask;
@@ -114,9 +120,23 @@ module_param_named(debug_mask, msm_smd_debug_mask,
 static unsigned last_heap_free = 0xffffffff;
 
 #if defined(CONFIG_ARCH_MSM7X30)
-#define MSM_TRIG_A2M_INT(n) (writel(1 << n, MSM_GCC_BASE + 0x8))
+#define MSM_TRIG_A2M_SMD_INT     (writel(1 << 0, MSM_GCC_BASE + 0x8))
+#define MSM_TRIG_A2Q6_SMD_INT    (writel(1 << 8, MSM_GCC_BASE + 0x8))
+#define MSM_TRIG_A2M_SMSM_INT    (writel(1 << 5, MSM_GCC_BASE + 0x8))
+#define MSM_TRIG_A2Q6_SMSM_INT   (writel(1 << 8, MSM_GCC_BASE + 0x8))
+#define MSM_TRIG_A2DSPS_SMD_INT
+#elif defined(CONFIG_ARCH_MSM8X60)
+#define MSM_TRIG_A2M_SMD_INT     (writel(1 << 3, MSM_GCC_BASE + 0x8))
+#define MSM_TRIG_A2Q6_SMD_INT    (writel(1 << 15, MSM_GCC_BASE + 0x8))
+#define MSM_TRIG_A2M_SMSM_INT    (writel(1 << 4, MSM_GCC_BASE + 0x8))
+#define MSM_TRIG_A2Q6_SMSM_INT   (writel(1 << 15, MSM_GCC_BASE + 0x8))
+#define MSM_TRIG_A2DSPS_SMD_INT  (writel(1, MSM_SIC_NON_SECURE_BASE + 0x4080))
 #else
-#define MSM_TRIG_A2M_INT(n) (writel(1, MSM_CSR_BASE + 0x400 + (n) * 4))
+#define MSM_TRIG_A2M_SMD_INT     (writel(1, MSM_CSR_BASE + 0x400 + (0) * 4))
+#define MSM_TRIG_A2Q6_SMD_INT    (writel(1, MSM_CSR_BASE + 0x400 + (8) * 4))
+#define MSM_TRIG_A2M_SMSM_INT    (writel(1, MSM_CSR_BASE + 0x400 + (5) * 4))
+#define MSM_TRIG_A2Q6_SMSM_INT   (writel(1, MSM_CSR_BASE + 0x400 + (8) * 4))
+#define MSM_TRIG_A2DSPS_SMD_INT
 #endif
 
 #define SMD_LOOPBACK_CID 100
@@ -131,7 +151,7 @@ static void notify_other_smsm(uint32_t smsm_entry, uint32_t notify_mask)
 	   but still communicates with modem */
 	if (!smsm_info.intr_mask ||
 	    (readl(SMSM_INTR_MASK_ADDR(smsm_entry, SMSM_MODEM)) & notify_mask))
-		MSM_TRIG_A2M_INT(5);
+		MSM_TRIG_A2M_SMSM_INT;
 
 	if (smsm_info.intr_mask &&
 	    (readl(SMSM_INTR_MASK_ADDR(smsm_entry, SMSM_Q6_I)) & notify_mask)) {
@@ -141,18 +161,23 @@ static void notify_other_smsm(uint32_t smsm_entry, uint32_t notify_mask)
 			writel(mux_val, SMSM_INTR_MUX_ADDR(SMEM_APPS_Q6_SMSM));
 		}
 
-		MSM_TRIG_A2M_INT(8);
+		MSM_TRIG_A2Q6_SMSM_INT;
 	}
 }
 
 static inline void notify_modem_smd(void)
 {
-	MSM_TRIG_A2M_INT(0);
+	MSM_TRIG_A2M_SMD_INT;
 }
 
 static inline void notify_dsp_smd(void)
 {
-	MSM_TRIG_A2M_INT(8);
+	MSM_TRIG_A2Q6_SMD_INT;
+}
+
+static inline void notify_dsps_smd(void)
+{
+	MSM_TRIG_A2DSPS_SMD_INT;
 }
 
 void smd_diag(void)
@@ -170,33 +195,29 @@ void smd_diag(void)
 	if (x != 0) {
 		x[size - 1] = 0;
 		pr_err("smem: CRASH LOG\n'%s'\n", x);
-		pr_err("\n");
 	}
 }
 
 
 static void handle_modem_crash(void)
 {
-#ifdef CONFIG_KEXEC
-	console_verbose();
-#endif
-	pr_err("ARM9 HAS CRASHED\n");
+	pr_err("ARM9 has CRASHED\n");
 	smd_diag();
-#ifdef CONFIG_KEXEC
-	debug_locks_off();
-	panic("Modem has crashed...\n");
-#endif
+
 	/* hard reboot if possible FIXME
 	if (msm_reset_hook)
 		msm_reset_hook();
 	*/
+
+	/* Make sure the data and buffers are all stored in memory */
+	flush_cache_all();
 
 	/* in this case the modem or watchdog should reboot us */
 	for (;;)
 		;
 }
 
-static int check_for_modem_crash(void)
+int smsm_check_for_modem_crash(void)
 {
 	/* if the modem's not ready yet, we have to hope for the best */
 	if (!smsm_info.state)
@@ -268,6 +289,7 @@ struct smd_channel {
 static LIST_HEAD(smd_ch_closed_list);
 static LIST_HEAD(smd_ch_list_modem);
 static LIST_HEAD(smd_ch_list_dsp);
+static LIST_HEAD(smd_ch_list_dsps);
 
 static unsigned char smd_ch_allocated[64];
 static struct work_struct probe_work;
@@ -278,10 +300,14 @@ static void smd_channel_probe_worker(struct work_struct *work)
 {
 	struct smd_alloc_elm *shared;
 	unsigned n;
+	uint32_t type;
 
 	shared = smem_find(ID_CH_ALLOC_TBL, sizeof(*shared) * 64);
 
-	BUG_ON(!shared);
+	if (!shared) {
+		pr_err("%s: allocation table not initialized\n", __func__);
+		return;
+	}
 
 	for (n = 0; n < 64; n++) {
 		if (smd_ch_allocated[n])
@@ -289,7 +315,9 @@ static void smd_channel_probe_worker(struct work_struct *work)
 
 		/* channel should be allocated only if APPS
 		   processor is involved */
-		if (SMD_CHANNEL_TYPE(shared[n].type) == SMD_MODEM_QDSP_I)
+		type = SMD_CHANNEL_TYPE(shared[n].type);
+		if ((type != SMD_APPS_MODEM) && (type != SMD_APPS_QDSP_I) &&
+		    (type != SMD_APPS_DSPS_I))
 			continue;
 		if (!shared[n].ref_count)
 			continue;
@@ -559,10 +587,19 @@ static irqreturn_t smd_dsp_irq_handler(int irq, void *data)
 }
 #endif
 
+#if defined(CONFIG_DSPS)
+static irqreturn_t smd_dsps_irq_handler(int irq, void *data)
+{
+	handle_smd_irq(&smd_ch_list_dsps, notify_dsps_smd);
+	return IRQ_HANDLED;
+}
+#endif
+
 static void smd_fake_irq_handler(unsigned long arg)
 {
 	handle_smd_irq(&smd_ch_list_modem, notify_modem_smd);
 	handle_smd_irq(&smd_ch_list_dsp, notify_dsp_smd);
+	handle_smd_irq(&smd_ch_list_dsps, notify_dsps_smd);
 }
 
 static DECLARE_TASKLET(smd_fake_irq_tasklet, smd_fake_irq_handler, 0);
@@ -592,6 +629,12 @@ void smd_sleep_exit(void)
 		}
 	}
 	list_for_each_entry(ch, &smd_ch_list_dsp, ch_list) {
+		if (smd_need_int(ch)) {
+			need_int = 1;
+			break;
+		}
+	}
+	list_for_each_entry(ch, &smd_ch_list_dsps, ch_list) {
 		if (smd_need_int(ch)) {
 			need_int = 1;
 			break;
@@ -815,8 +858,10 @@ static int smd_alloc_channel(struct smd_alloc_elm *alloc_elm)
 
 	if (ch->type == SMD_APPS_MODEM)
 		ch->notify_other_cpu = notify_modem_smd;
-	else
+	else if (ch->type == SMD_APPS_QDSP)
 		ch->notify_other_cpu = notify_dsp_smd;
+	else
+		ch->notify_other_cpu = notify_dsps_smd;
 
 	if (smd_is_packet(alloc_elm)) {
 		ch->read = smd_packet_read;
@@ -974,6 +1019,8 @@ int smd_named_open_on_edge(const char *name, uint32_t edge,
 		list_add(&ch->ch_list, &smd_ch_list_modem);
 	else if (SMD_CHANNEL_TYPE(ch->type) == SMD_APPS_QDSP_I)
 		list_add(&ch->ch_list, &smd_ch_list_dsp);
+	else if (SMD_CHANNEL_TYPE(ch->type) == SMD_APPS_DSPS_I)
+		list_add(&ch->ch_list, &smd_ch_list_dsps);
 	else
 		list_add(&ch->ch_list, &smd_ch_list_loopback);
 
@@ -1001,10 +1048,10 @@ int smd_close(smd_channel_t *ch)
 {
 	unsigned long flags;
 
-	SMD_INFO("smd_close(%p)\n", ch);
-
 	if (ch == 0)
 		return -1;
+
+	SMD_INFO("smd_close(%s)\n", ch->name);
 
 	spin_lock_irqsave(&smd_lock, flags);
 	ch->notify = do_nothing_notify;
@@ -1109,9 +1156,63 @@ int smd_tiocmset(smd_channel_t *ch, unsigned int set, unsigned int clear)
 
 /* -------------------------------------------------------------------------- */
 
+/* smem_alloc returns the pointer to smem item if it is already allocated.
+ * Otherwise, it returns NULL.
+ */
 void *smem_alloc(unsigned id, unsigned size)
 {
 	return smem_find(id, size);
+}
+
+#define SMEM_SPINLOCK_SMEM_ALLOC       "S:3"
+static remote_spinlock_t remote_spinlock;
+
+/* smem_alloc2 returns the pointer to smem item.  If it is not allocated,
+ * it allocates it and then returns the pointer to it.
+ */
+static void *smem_alloc2(unsigned id, unsigned size_in)
+{
+	struct smem_shared *shared = (void *) MSM_SHARED_RAM_BASE;
+	struct smem_heap_entry *toc = shared->heap_toc;
+	unsigned long flags;
+	void *ret = NULL;
+
+	if (!shared->heap_info.initialized) {
+		pr_err("%s: smem heap info not initialized\n", __func__);
+		return NULL;
+	}
+
+	if (id >= SMEM_NUM_ITEMS)
+		return NULL;
+
+	size_in = ALIGN(size_in, 8);
+	remote_spin_lock_irqsave(&remote_spinlock, flags);
+	if (toc[id].allocated) {
+		SMD_DBG("%s: %u already allocated\n", __func__, id);
+		if (size_in != toc[id].size)
+			pr_err("%s: wrong size %u (expected %u)\n",
+			       __func__, toc[id].size, size_in);
+		else
+			ret = (void *)(MSM_SHARED_RAM_BASE + toc[id].offset);
+	} else if (id > SMEM_FIXED_ITEM_LAST) {
+		SMD_DBG("%s: allocating %u\n", __func__, id);
+		if (shared->heap_info.heap_remaining >= size_in) {
+			toc[id].allocated = 1;
+			toc[id].offset = shared->heap_info.free_offset;
+			toc[id].size = size_in;
+
+			shared->heap_info.free_offset += size_in;
+			shared->heap_info.heap_remaining -= size_in;
+			ret = (void *)(MSM_SHARED_RAM_BASE + toc[id].offset);
+		} else
+			pr_err("%s: not enough memory %u (required %u)\n",
+			       __func__, shared->heap_info.heap_remaining,
+			       size_in);
+	}
+	/* TODO: system/hardware barrier required? */
+	barrier();
+	remote_spin_unlock_irqrestore(&remote_spinlock, flags);
+	return ret;
 }
 
 void *smem_get_entry(unsigned id, unsigned *size)
@@ -1156,25 +1257,29 @@ static int smsm_init(void)
 	struct smem_shared *shared = (void *) MSM_SHARED_RAM_BASE;
 	int i;
 
+	i = remote_spin_lock_init(&remote_spinlock, SMEM_SPINLOCK_SMEM_ALLOC);
+	if (i) {
+		pr_err("%s: remote spinlock init failed %d\n", __func__, i);
+		return i;
+	}
+
 	if (!smsm_info.state) {
-		smsm_info.state = smem_alloc(ID_SHARED_STATE,
-					     SMSM_NUM_ENTRIES *
-					     sizeof(uint32_t));
+		smsm_info.state = smem_alloc2(ID_SHARED_STATE,
+					      SMSM_NUM_ENTRIES *
+					      sizeof(uint32_t));
 
 		if (smsm_info.state) {
-#ifndef CONFIG_CAPTURE_KERNEL
 			writel(0, SMSM_STATE_ADDR(SMSM_APPS_STATE));
-#endif
 			if ((shared->version[VERSION_MODEM] >> 16) >= 0xB)
 				writel(0, SMSM_STATE_ADDR(SMSM_APPS_DEM_I));
 		}
 	}
 
 	if (!smsm_info.intr_mask) {
-		smsm_info.intr_mask = smem_alloc(SMEM_SMSM_CPU_INTR_MASK,
-						 SMSM_NUM_ENTRIES *
-						 SMSM_NUM_HOSTS *
-						 sizeof(uint32_t));
+		smsm_info.intr_mask = smem_alloc2(SMEM_SMSM_CPU_INTR_MASK,
+						  SMSM_NUM_ENTRIES *
+						  SMSM_NUM_HOSTS *
+						  sizeof(uint32_t));
 
 		if (smsm_info.intr_mask)
 			for (i = 0; i < SMSM_NUM_ENTRIES; i++)
@@ -1183,9 +1288,9 @@ static int smsm_init(void)
 	}
 
 	if (!smsm_info.intr_mux)
-		smsm_info.intr_mux = smem_alloc(SMEM_SMD_SMSM_INTR_MUX,
-						SMSM_NUM_INTR_MUX *
-						sizeof(uint32_t));
+		smsm_info.intr_mux = smem_alloc2(SMEM_SMD_SMSM_INTR_MUX,
+						 SMSM_NUM_INTR_MUX *
+						 sizeof(uint32_t));
 
 	return 0;
 }
@@ -1225,7 +1330,6 @@ static irqreturn_t smsm_irq_handler(int irq, void *data)
 	static uint32_t prev_smem_q6_apps_smsm;
 	uint32_t mux_val;
 
-	smsm_init();
 	if (irq == INT_ADSP_A11) {
 		if (!smsm_info.intr_mux)
 			return IRQ_HANDLED;
@@ -1262,11 +1366,12 @@ static irqreturn_t smsm_irq_handler(int irq, void *data)
 
 		} else if (modm & SMSM_RESET) {
 			apps |= SMSM_RESET;
-#ifdef CONFIG_KEXEC
-			handle_modem_crash();
-#endif
-		} else {
-			apps |= SMSM_INIT;
+		} else if (modm & SMSM_INIT) {
+			if (!(apps & SMSM_INIT)) {
+				apps |= SMSM_INIT;
+				modem_queue_smsm_init_notify();
+			}
+
 			if (modm & SMSM_SMDINIT)
 				apps |= SMSM_SMDINIT;
 			if ((apps & (SMSM_INIT | SMSM_SMDINIT | SMSM_RPCINIT)) ==
@@ -1419,11 +1524,29 @@ int smd_core_init(void)
 	if (r < 0) {
 		free_irq(INT_A9_M2A_0, 0);
 		free_irq(INT_A9_M2A_5, 0);
-		free_irq(INT_ADSP_A11, 0);
+		free_irq(INT_ADSP_A11, smd_dsp_irq_handler);
 		return r;
 	}
 
 	r = enable_irq_wake(INT_ADSP_A11);
+	if (r < 0)
+		pr_err("smd_core_init: "
+		       "enable_irq_wake failed for INT_ADSP_A11\n");
+#endif
+
+#if defined(CONFIG_DSPS)
+	r = request_irq(INT_DSPS_A11, smd_dsps_irq_handler,
+			IRQF_TRIGGER_RISING | IRQF_SHARED, "smd_dev",
+			smd_dsps_irq_handler);
+	if (r < 0) {
+		free_irq(INT_A9_M2A_0, 0);
+		free_irq(INT_A9_M2A_5, 0);
+		free_irq(INT_ADSP_A11, smd_dsp_irq_handler);
+		free_irq(INT_ADSP_A11, smsm_irq_handler);
+		return r;
+	}
+
+	r = enable_irq_wake(INT_DSPS_A11);
 	if (r < 0)
 		pr_err("smd_core_init: "
 		       "enable_irq_wake failed for INT_ADSP_A11\n");
@@ -1459,39 +1582,11 @@ static int __init msm_smd_probe(struct platform_device *pdev)
 		return -1;
 	}
 
-	do_smd_probe();
-
-	msm_check_for_modem_crash = check_for_modem_crash;
-
 	smd_initialized = 1;
 
 	smd_alloc_loopback_channel();
 
 	return 0;
-}
-
-void __init smsm_wait_for_modem(void)
-{
-	uint32_t *smsm = NULL;
-	unsigned long flags;
-
-	printk(KERN_INFO "Waiting for Modem...\n");
-	for (;;) {
-		spin_lock_irqsave(&smem_lock, flags);
-		if (smsm == NULL) {
-			smsm = smem_alloc(ID_SHARED_STATE,
-				SMSM_NUM_ENTRIES * sizeof(uint32_t));
-		} else {
-			if ((smsm[SMSM_MODEM_STATE] & SMSM_OSENTERED) != 0) {
-				spin_unlock_irqrestore(&smem_lock, flags);
-				break;
-			}
-		}
-		spin_unlock_irqrestore(&smem_lock, flags);
-		schedule();
-	}
-
-	return;
 }
 
 static struct platform_driver msm_smd_driver = {
@@ -1512,105 +1607,3 @@ module_init(msm_smd_init);
 MODULE_DESCRIPTION("MSM Shared Memory Core");
 MODULE_AUTHOR("Brian Swetland <swetland@google.com>");
 MODULE_LICENSE("GPL");
-
-#ifdef CONFIG_KEXEC
-void smsm_notify_apps_crashdump(void)
-{
-	uint32_t *smsm;
-	unsigned long flags;
-	uint32_t old_state;
-
-	if (!spin_is_locked(&smem_lock)) {
-		spin_lock_irqsave(&smem_lock, flags);
-		smsm = smem_alloc(ID_SHARED_STATE,
-				SMSM_NUM_ENTRIES * sizeof(uint32_t));
-		if (smsm != NULL) {
-			old_state = smsm[SMSM_APPS_STATE];
-			smsm[SMSM_APPS_STATE] |= SMSM_APPS_CRASHDUMP;
-			notify_other_smsm(SMSM_APPS_STATE,
-				(old_state ^ smsm[SMSM_APPS_STATE]));
-		}
-		spin_unlock_irqrestore(&smem_lock, flags);
-	} else {
-		smsm = smem_alloc(ID_SHARED_STATE,
-				SMSM_NUM_ENTRIES * sizeof(uint32_t));
-		if (smsm != NULL) {
-			old_state = smsm[SMSM_APPS_STATE];
-			smsm[SMSM_APPS_STATE] |= SMSM_APPS_CRASHDUMP;
-			notify_other_smsm(SMSM_APPS_STATE,
-				(old_state ^ smsm[SMSM_APPS_STATE]));
-		}
-	}
-
-	return;
-}
-
-/* Acknowledge AMMS crash by setting SMSM_APPS_CRASHDUMP*/
-void smsm_ack_amss_crash(void)
-{
-	uint32_t *smsm;
-
-	smsm = smem_alloc(ID_SHARED_STATE,
-				SMSM_NUM_ENTRIES * sizeof(uint32_t));
-	if (smsm != NULL)
-		smsm[SMSM_APPS_STATE] |= SMSM_APPS_CRASHDUMP;
-
-	return;
-}
-
-void smsm_notify_system_reboot(void)
-{
-	uint32_t *smsm;
-	unsigned long flags;
-	uint32_t old_state;
-
-	if (!spin_is_locked(&smem_lock)) {
-		spin_lock_irqsave(&smem_lock, flags);
-		smsm = smem_alloc(ID_SHARED_STATE,
-				SMSM_NUM_ENTRIES * sizeof(uint32_t));
-		if (smsm != NULL) {
-			old_state = smsm[SMSM_APPS_STATE];
-			smsm[SMSM_APPS_STATE] |= SMSM_SYSTEM_REBOOT;
-			notify_other_smsm(SMSM_APPS_STATE,
-				(old_state ^ smsm[SMSM_APPS_STATE]));
-		}
-		spin_unlock_irqrestore(&smem_lock, flags);
-	} else {
-		smsm = smem_alloc(ID_SHARED_STATE,
-				SMSM_NUM_ENTRIES * sizeof(uint32_t));
-		if (smsm != NULL) {
-			old_state = smsm[SMSM_APPS_STATE];
-			smsm[SMSM_APPS_STATE] |= SMSM_SYSTEM_REBOOT;
-			notify_other_smsm(SMSM_APPS_STATE,
-				(old_state ^ smsm[SMSM_APPS_STATE]));
-		}
-	}
-	return;
-}
-#endif
-
-#ifdef CONFIG_CAPTURE_KERNEL
-void smsm_wait_for_modem_reset(void)
-{
-	uint32_t *smsm = NULL;
-	unsigned long flags;
-
-	printk(KERN_INFO "Waiting for Modem reset...\n");
-	for (;;) {
-		spin_lock_irqsave(&smem_lock, flags);
-		if (smsm == NULL) {
-			smsm = smem_alloc(ID_SHARED_STATE,
-			SMSM_NUM_ENTRIES * sizeof(uint32_t));
-		} else {
-			if ((smsm[SMSM_MODEM_STATE] & SMSM_RESET) != 0) {
-				spin_unlock_irqrestore(&smem_lock, flags);
-				break;
-			}
-		}
-		spin_unlock_irqrestore(&smem_lock, flags);
-		schedule();
-	}
-
-	return;
-}
-#endif

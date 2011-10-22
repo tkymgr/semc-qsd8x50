@@ -772,7 +772,8 @@ static int msm_pm_read_proc
 		}
 
 		SNPRINTF(p, count, "Last power collapse voted ");
-		if (msm_pm_sleep_limit == SLEEP_LIMIT_NONE)
+		if ((msm_pm_sleep_limit & SLEEP_LIMIT_MASK) ==
+			SLEEP_LIMIT_NONE)
 			SNPRINTF(p, count, "for TCXO shutdown\n\n");
 		else
 			SNPRINTF(p, count, "against TCXO shutdown\n\n");
@@ -1738,7 +1739,7 @@ static void msm_pm_power_off(void)
 		;
 }
 
-static void msm_pm_restart(char str)
+static void msm_pm_restart(char str, const char *cmd)
 {
 	msm_rpcrouter_close();
 	msm_proc_comm(PCOM_RESET_CHIP_IMM, &restart_reason, 0);
@@ -1884,4 +1885,4 @@ static int __init msm_pm_init(void)
 	return 0;
 }
 
-late_initcall(msm_pm_init);
+late_initcall_sync(msm_pm_init);

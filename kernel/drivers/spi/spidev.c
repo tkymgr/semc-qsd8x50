@@ -58,15 +58,20 @@ static unsigned long	minors[N_SPI_MINORS / BITS_PER_LONG];
 
 
 /* Bit masks for spi_device.mode management.  Note that incorrect
- * settings for CS_HIGH and 3WIRE can cause *lots* of trouble for other
- * devices on a shared bus:  CS_HIGH, because this device will be
- * active when it shouldn't be;  3WIRE, because when active it won't
- * behave as it should.
+ * settings for some settings can cause *lots* of trouble for other
+ * devices on a shared bus:
  *
- * REVISIT should changing those two modes be privileged?
+ *  - CS_HIGH ... this device will be active when it shouldn't be
+ *  - 3WIRE ... when active, it won't behave as it should
+ *  - NO_CS ... there will be no explicit message boundaries; this
+ *	is completely incompatible with the shared bus model
+ *  - READY ... transfers may proceed when they shouldn't.
+ *
+ * REVISIT should changing those flags be privileged?
  */
 #define SPI_MODE_MASK		(SPI_CPHA | SPI_CPOL | SPI_CS_HIGH \
-				| SPI_LSB_FIRST | SPI_3WIRE | SPI_LOOP)
+				| SPI_LSB_FIRST | SPI_3WIRE | SPI_LOOP \
+				| SPI_NO_CS | SPI_READY)
 
 struct spidev_data {
 	dev_t			devt;
@@ -91,8 +96,6 @@ MODULE_PARM_DESC(bufsiz, "data bytes in biggest supported SPI message");
 /* This can be used for testing the controller, given the busnum and the cs
    required to sit on. If those parameters are used, spidev is dynamically added
    as device on the busnum, and messages can be sent via this interface.
-   Please notice that we don't check if there is a module that is responsible
-   for this chipselect, hence this should be used for testing only.
    */
 static int busnum = -1;
 module_param(busnum, int, S_IRUGO);
@@ -515,7 +518,7 @@ static int spidev_open(struct inode *inode, struct file *filp)
 		if (!spidev->bufferrx) {
 			spidev->bufferrx = kmalloc(bufsiz, GFP_KERNEL);
 			if (!spidev->bufferrx) {
-				dev_err(&spidev->spi->dev, "open/ENOMEM\n");
+				dev_dbg(&spidev->spi->dev, "open/ENOMEM\n");
 				kfree(spidev->buffer);
 				spidev->buffer = NULL;
 				status = -ENOMEM;
@@ -566,7 +569,7 @@ static int spidev_release(struct inode *inode, struct file *filp)
 	return status;
 }
 
-static struct file_operations spidev_fops = {
+static const struct file_operations spidev_fops = {
 	.owner =	THIS_MODULE,
 	/* REVISIT switch to aio primitives, so that userspace
 	 * gets more complete API coverage.  It'll simplify things
@@ -681,7 +684,6 @@ static struct spi_driver spidev_spi = {
 static int __init spidev_init(void)
 {
 	int status;
-	struct spi_master *master;
 
 	/* Claim our 256 reserved device numbers.  Then register a class
 	 * that will key udev/mdev to add/remove /dev nodes.  Last, register
@@ -694,7 +696,6 @@ static int __init spidev_init(void)
 
 	spidev_class = class_create(THIS_MODULE, "spidev");
 	if (IS_ERR(spidev_class)) {
-		unregister_chrdev(SPIDEV_MAJOR, spidev_spi.driver.name);
 		status = PTR_ERR(spidev_class);
 		goto error_class;
 	}
@@ -704,6 +705,14 @@ static int __init spidev_init(void)
 		goto error_register;
 
 	if (busnum != -1 && chipselect != -1) {
+		struct spi_board_info chip  = {
+					.modalias	= "spidev",
+					.mode		= SPI_MODE_3,
+					.bus_num	= busnum,
+					.chip_select	= chipselect,
+					.max_speed_hz	= maxspeed,
+		};
+		struct spi_master *master;
 
 		master = spi_busnum_to_master(busnum);
 		if (!master) {
@@ -712,30 +721,19 @@ static int __init spidev_init(void)
 		}
 
 		/* We create a virtual device that will sit on the bus */
-		spi = kzalloc(sizeof(*spi), GFP_KERNEL);
+		spi = spi_new_device(master, &chip);
 		if (!spi) {
 			status = -ENOMEM;
 			goto error_mem;
 		}
-		spi->master = master;
-		spi->chip_select = chipselect;
-		spi->dev = master->dev;
-		spi->max_speed_hz = maxspeed;
+
 		dev_dbg(&spi->dev, "busnum=%d cs=%d bufsiz=%d maxspeed=%d",
 			 busnum, chipselect, bufsiz, maxspeed);
-
-		status = spidev_probe(spi);
-		if (status)
-			goto error_probe;
 	}
 
 	return 0;
 
-error_probe:
-	kfree(spi);
-	spi = NULL;
 error_mem:
-	spi_master_put(master);
 error_busnum:
 	spi_unregister_driver(&spidev_spi);
 error_register:
@@ -749,9 +747,7 @@ module_init(spidev_init);
 static void __exit spidev_exit(void)
 {
 	if (spi) {
-		spidev_remove(spi);
-		spi_master_put(spi->master);
-		kfree(spi);
+		spi_dev_put(spi);
 		spi = NULL;
 	}
 	spi_unregister_driver(&spidev_spi);
@@ -763,3 +759,4 @@ module_exit(spidev_exit);
 MODULE_AUTHOR("Andrea Paterniani, <a.paterniani@swapp-eng.it>");
 MODULE_DESCRIPTION("User mode SPI device interface");
 MODULE_LICENSE("GPL");
+MODULE_ALIAS("spi:spidev");

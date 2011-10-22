@@ -41,6 +41,8 @@
 #define MSMFB_OVERLAY_GET      _IOR(MSMFB_IOCTL_MAGIC, 140, \
 						struct mdp_overlay)
 #define MSMFB_OVERLAY_PLAY_ENABLE     _IOW(MSMFB_IOCTL_MAGIC, 141, unsigned int)
+#define MSMFB_DTV_LCDC_ENABLE     _IOW(MSMFB_IOCTL_MAGIC, 142, unsigned int)
+#define MSMFB_OVERLAY_REFRESH     _IOW(MSMFB_IOCTL_MAGIC, 143, unsigned int)
 
 #define MDP_IMGTYPE2_START 0x10000
 
@@ -88,8 +90,11 @@ enum {
 #define MDP_BLIT_WITH_DMA_BARRIERS	0x000
 #define MDP_BLIT_WITH_NO_DMA_BARRIERS    \
 	(MDP_NO_DMA_BARRIER_START | MDP_NO_DMA_BARRIER_END)
+#define MDP_BLIT_SRC_GEM                0x04000000
+#define MDP_BLIT_DST_GEM                0x02000000
 #define MDP_TRANSP_NOP 0xffffffff
 #define MDP_ALPHA_NOP 0xff
+#define MDP_SOURCE_ROTATED_90		0x00100000
 
 #define MDP_FB_PAGE_PROTECTION_NONCACHED         (0)
 #define MDP_FB_PAGE_PROTECTION_WRITECOMBINE      (1)
@@ -114,6 +119,7 @@ struct mdp_img {
 	uint32_t format;
 	uint32_t offset;
 	int memory_id;		/* the file descriptor */
+	uint32_t priv;
 };
 
 /*
@@ -132,6 +138,13 @@ struct mdp_ccs {
 	uint16_t bv[MDP_BV_SIZE];	/* 1x3 bias vector */
 };
 
+/* The version of the mdp_blit_req structure so that
+ * user applications can selectively decide which functionality
+ * to include
+ */
+
+#define MDP_BLIT_REQ_VERSION 2
+
 struct mdp_blit_req {
 	struct mdp_img src;
 	struct mdp_img dst;
@@ -148,10 +161,14 @@ struct mdp_blit_req_list {
 	struct mdp_blit_req req[];
 };
 
+#define MSMFB_DATA_VERSION 2
+
 struct msmfb_data {
 	uint32_t offset;
 	int memory_id;
 	int id;
+	uint32_t flags;
+	uint32_t priv;
 };
 
 #define MSMFB_NEW_REQUEST -1
@@ -191,5 +208,12 @@ struct mdp_histogram {
 struct mdp_page_protection {
 	uint32_t page_protection;
 };
+
+#ifdef __KERNEL__
+
+/* get the framebuffer physical address information */
+int get_fb_phys_info(unsigned long *start, unsigned long *len, int fb_num);
+
+#endif
 
 #endif /*_MSM_MDP_H_*/

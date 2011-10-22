@@ -1,67 +1,35 @@
-/* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2009-2011, Code Aurora Forum. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Code Aurora Forum nor
- *       the names of its contributors may be used to endorse or promote
- *       products derived from this software without specific prior written
- *       permission.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
  *
- * Alternatively, provided that this notice is retained in full, this software
- * may be relicensed by the recipient under the terms of the GNU General Public
- * License version 2 ("GPL") and only version 2, in which case the provisions of
- * the GPL apply INSTEAD OF those given above.  If the recipient relicenses the
- * software under the GPL, then the identification text in the MODULE_LICENSE
- * macro must be changed to reflect "GPLv2" instead of "Dual BSD/GPL".  Once a
- * recipient changes the license terms to the GPL, subsequent recipients shall
- * not relicense under alternate licensing terms, including the BSD or dual
- * BSD/GPL terms.  In addition, the following license statement immediately
- * below and between the words START and END shall also then apply when this
- * software is relicensed under the GPL:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * START
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 and only version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- * details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * END
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  *
  */
 
 #include <linux/libra_sdioif.h>
 #include <linux/delay.h>
+#include <linux/mmc/sdio.h>
+#include <linux/mmc/mmc.h>
+#include <linux/mmc/host.h>
+#include <linux/mmc/card.h>
 
 /* Libra SDIO function device */
 static struct sdio_func *libra_sdio_func;
 static struct mmc_host *libra_mmc_host;
 static int libra_mmc_host_index;
+
+static suspend_handler_t *libra_suspend_hldr;
+static resume_handler_t *libra_resume_hldr;
 
 /**
  * libra_sdio_configure() - Function to configure the SDIO device param
@@ -132,17 +100,77 @@ cfg_error:
 }
 EXPORT_SYMBOL(libra_sdio_configure);
 
+int libra_sdio_configure_suspend_resume(
+		suspend_handler_t *libra_sdio_suspend_hdlr,
+		resume_handler_t *libra_sdio_resume_hdlr)
+{
+	libra_suspend_hldr = libra_sdio_suspend_hdlr;
+	libra_resume_hldr = libra_sdio_resume_hdlr;
+	return 0;
+}
+EXPORT_SYMBOL(libra_sdio_configure_suspend_resume);
+
 /*
  * libra_sdio_deconfigure() - Function to reset the SDIO device param
  */
 void libra_sdio_deconfigure(struct sdio_func *func)
 {
+	if (NULL == libra_sdio_func)
+		return;
+
 	sdio_claim_host(func);
 	sdio_release_irq(func);
 	sdio_disable_func(func);
 	sdio_release_host(func);
 }
 EXPORT_SYMBOL(libra_sdio_deconfigure);
+
+int libra_enable_sdio_irq(struct sdio_func *func, u8 enable)
+{
+	if (libra_mmc_host) {
+		if (!enable) {
+			/*Disable SDIO IRQ */
+			libra_mmc_host->ops->enable_sdio_irq(libra_mmc_host, 0);
+
+			/*SDIO IRQ thread can re-enable the interrupt if card
+			capability is set as MMC_CAP_SDIO_IRQ. So disable that
+			as well */
+			libra_mmc_host->caps &= ~MMC_CAP_SDIO_IRQ;
+		} else {
+			libra_mmc_host->ops->enable_sdio_irq(libra_mmc_host, 1);
+			libra_mmc_host->caps |= MMC_CAP_SDIO_IRQ;
+		}
+		return 0;
+	}
+
+	printk(KERN_ERR "%s: Could not enable disable irq\n", __func__);
+	return -EINVAL;
+}
+EXPORT_SYMBOL(libra_enable_sdio_irq);
+
+/*
+ * libra_sdio_release_irq() - Function to release IRQ
+ */
+void libra_sdio_release_irq(struct sdio_func *func)
+{
+	if (NULL == libra_sdio_func)
+		return;
+
+	sdio_release_irq(func);
+}
+EXPORT_SYMBOL(libra_sdio_release_irq);
+
+/*
+ * libra_sdio_disable_func() - Function to disable sdio func
+ */
+void libra_sdio_disable_func(struct sdio_func *func)
+{
+	if (NULL == libra_sdio_func)
+		return;
+
+	sdio_disable_func(func);
+}
+EXPORT_SYMBOL(libra_sdio_disable_func);
 
 /*
  * Return the SDIO Function device
@@ -159,6 +187,9 @@ EXPORT_SYMBOL(libra_getsdio_funcdev);
 void libra_sdio_setprivdata(struct sdio_func *sdio_func_dev,
 		void *padapter)
 {
+	if (NULL == libra_sdio_func)
+		return;
+
 	sdio_set_drvdata(sdio_func_dev, padapter);
 }
 EXPORT_SYMBOL(libra_sdio_setprivdata);
@@ -178,6 +209,9 @@ EXPORT_SYMBOL(libra_sdio_getprivdata);
 void libra_claim_host(struct sdio_func *sdio_func_dev,
 		pid_t *curr_claimed, pid_t current_pid, atomic_t *claim_count)
 {
+	if (NULL == libra_sdio_func)
+		return;
+
 	if (*curr_claimed == current_pid) {
 		atomic_inc(claim_count);
 		return;
@@ -198,6 +232,10 @@ EXPORT_SYMBOL(libra_claim_host);
 void libra_release_host(struct sdio_func *sdio_func_dev,
 		pid_t *curr_claimed, pid_t current_pid, atomic_t *claim_count)
 {
+
+	if (NULL == libra_sdio_func)
+		return;
+
 	if (*curr_claimed != current_pid) {
 		/* Dont release  */
 		return;
@@ -249,6 +287,21 @@ int libra_sdio_memcpy_toio(struct sdio_func *func,
 }
 EXPORT_SYMBOL(libra_sdio_memcpy_toio);
 
+int libra_detect_card_change(void)
+{
+	if (libra_mmc_host) {
+		if (!strcmp(libra_mmc_host->class_dev.class->name, "mmc_host")
+			&& (libra_mmc_host_index == libra_mmc_host->index)) {
+			mmc_detect_change(libra_mmc_host, 0);
+			return 0;
+		}
+	}
+
+	printk(KERN_ERR "%s: Could not trigger card change\n", __func__);
+	return -EINVAL;
+}
+EXPORT_SYMBOL(libra_detect_card_change);
+
 int libra_sdio_enable_polling(void)
 {
 	if (libra_mmc_host) {
@@ -264,6 +317,15 @@ int libra_sdio_enable_polling(void)
 	return -1;
 }
 EXPORT_SYMBOL(libra_sdio_enable_polling);
+
+void libra_sdio_set_clock(struct sdio_func *func, unsigned int clk_freq)
+{
+    struct mmc_host *host = func->card->host;
+    host->ios.clock = clk_freq;
+    host->ops->set_ios(host, &host->ios);
+
+}
+EXPORT_SYMBOL(libra_sdio_set_clock);
 
 /*
  * SDIO Probe
@@ -290,15 +352,58 @@ static void libra_sdio_remove(struct sdio_func *func)
 	printk(KERN_INFO "%s : Module removed.\n", __func__);
 }
 
+static int libra_sdio_suspend(struct device *dev)
+{
+	struct sdio_func *func = dev_to_sdio_func(dev);
+	int ret = 0;
+
+	ret = sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
+
+	if (ret) {
+		printk(KERN_ERR "%s: Error Host doesn't support the keep power capability\n" ,
+			__func__);
+		return ret;
+	}
+	if (libra_suspend_hldr) {
+		ret = libra_suspend_hldr(func);
+		if (ret) {
+			printk(KERN_ERR
+			"%s: Libra driver is not able to suspend\n" , __func__);
+			return ret;
+		}
+	}
+
+
+	return sdio_set_host_pm_flags(func, MMC_PM_WAKE_SDIO_IRQ);
+}
+
+static int libra_sdio_resume(struct device *dev)
+{
+	struct sdio_func *func = dev_to_sdio_func(dev);
+
+	if (libra_resume_hldr)
+		libra_resume_hldr(func);
+
+	return 0;
+}
+
+
 static struct sdio_device_id libra_sdioid[] = {
     {.class = 0, .vendor = LIBRA_MAN_ID, .device = 0},
     {}
 };
+
+static const struct dev_pm_ops libra_sdio_pm_ops = {
+    .suspend = libra_sdio_suspend,
+    .resume = libra_sdio_resume,
+};
+
 static struct sdio_driver libra_sdiofn_driver = {
     .name      = "libra_sdiofn",
     .id_table  = libra_sdioid,
     .probe     = libra_sdio_probe,
     .remove    = libra_sdio_remove,
+    .drv.pm    = &libra_sdio_pm_ops,
 };
 
 static int __init libra_sdioif_init(void)
@@ -306,6 +411,8 @@ static int __init libra_sdioif_init(void)
 	libra_sdio_func = NULL;
 	libra_mmc_host = NULL;
 	libra_mmc_host_index = -1;
+	libra_suspend_hldr = NULL;
+	libra_resume_hldr = NULL;
 
 	sdio_register_driver(&libra_sdiofn_driver);
 
@@ -334,6 +441,6 @@ static void __exit libra_sdioif_exit(void)
 module_init(libra_sdioif_init);
 module_exit(libra_sdioif_exit);
 
-MODULE_LICENSE("Dual BSD/GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_VERSION("1.0");
 MODULE_DESCRIPTION("WLAN SDIODriver");

@@ -172,7 +172,7 @@
 /* 160 */	CALL(sys_sched_get_priority_min)
 		CALL(sys_sched_rr_get_interval)
 		CALL(sys_nanosleep)
-		CALL(sys_arm_mremap)
+		CALL(sys_mremap)
 		CALL(sys_setresuid16)
 /* 165 */	CALL(sys_getresuid16)
 		CALL(sys_ni_syscall)		/* vm86 */
@@ -344,8 +344,8 @@
 		CALL(sys_readlinkat)
 		CALL(sys_fchmodat)
 		CALL(sys_faccessat)
-/* 335 */	CALL(sys_ni_syscall)		/* eventually pselect6 */
-		CALL(sys_ni_syscall)		/* eventually ppoll */
+/* 335 */	CALL(sys_pselect6)
+		CALL(sys_ppoll)
 		CALL(sys_unshare)
 		CALL(sys_set_robust_list)
 		CALL(sys_get_robust_list)
@@ -355,7 +355,7 @@
 		CALL(sys_vmsplice)
 		CALL(sys_move_pages)
 /* 345 */	CALL(sys_getcpu)
-		CALL(sys_ni_syscall)		/* eventually epoll_pwait */
+		CALL(sys_epoll_pwait)
 		CALL(sys_kexec_load)
 		CALL(sys_utimensat)
 		CALL(sys_signalfd)
@@ -372,6 +372,8 @@
 /* 360 */	CALL(sys_inotify_init1)
 		CALL(sys_preadv)
 		CALL(sys_pwritev)
+		CALL(sys_rt_tgsigqueueinfo)
+		CALL(sys_perf_event_open)
 #ifndef syscalls_counted
 .equ syscalls_padding, ((NR_syscalls + 3) & ~3) - NR_syscalls
 #define syscalls_counted

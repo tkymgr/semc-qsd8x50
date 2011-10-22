@@ -23,6 +23,7 @@
 #include <linux/fs.h>
 #include <linux/miscdevice.h>
 #include <linux/keychord.h>
+#include <linux/sched.h>
 
 #define KEYCHORD_NAME		"keychord"
 #define BUFFER_SIZE			16

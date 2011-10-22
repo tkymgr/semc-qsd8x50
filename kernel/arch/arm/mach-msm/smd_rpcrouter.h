@@ -209,7 +209,7 @@ struct rpcrouter_xprt {
 	int (*read_avail)(void);
 	int (*read)(void *data, uint32_t len);
 	int (*write_avail)(void);
-	int (*write)(void *data, uint32_t len);
+	int (*write)(void *data, uint32_t len, enum write_data_type type);
 	int (*close)(void);
 };
 

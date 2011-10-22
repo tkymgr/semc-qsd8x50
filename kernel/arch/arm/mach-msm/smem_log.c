@@ -1903,18 +1903,48 @@ static void smem_log_debugfs_init(void)
 static void smem_log_debugfs_init(void) {}
 #endif
 
-static int __init smem_log_init(void)
+static int smem_log_initialize(void)
 {
 	int ret;
 
 	ret = _smem_log_init();
-	if (ret < 0)
+	if (ret < 0) {
+		pr_err("%s: init failed %d\n", __func__, ret);
 		return ret;
+	}
+
+	ret = misc_register(&smem_log_dev);
+	if (ret < 0) {
+		pr_err("%s: device register failed %d\n", __func__, ret);
+		return ret;
+	}
 
 	smem_log_enable = 1;
 	smem_log_debugfs_init();
+	return ret;
+}
 
-	return misc_register(&smem_log_dev);
+static int modem_notifier(struct notifier_block *this,
+			  unsigned long code,
+			  void *_cmd)
+{
+	switch (code) {
+	case MODEM_NOTIFIER_SMSM_INIT:
+		smem_log_initialize();
+		break;
+	default:
+		break;
+	}
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block nb = {
+	.notifier_call = modem_notifier,
+};
+
+static int __init smem_log_init(void)
+{
+	return modem_register_notifier(&nb);
 }
 
 

@@ -107,9 +107,6 @@ ENTRY(msm_pm_collapse)
 	bx      lr
 
 ENTRY(msm_pm_collapse_exit)
-	MRC    p15, 0, r1, c15, c15, 2    //; PVR0F2
-	ORR    r1, r1, #0x10              //; enable bit 4
-	MCR    p15, 0, r1, c15, c15, 2    //; disable predecode repair cache
 #if 0 /* serial debug */
 	mov     r0, #0x80000016
 	mcr     p15, 0, r0, c15, c2, 4

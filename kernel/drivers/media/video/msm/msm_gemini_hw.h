@@ -1,4 +1,5 @@
 /* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
+ * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -55,8 +56,12 @@ int msm_gemini_hw_pingpong_update(struct msm_gemini_hw_pingpong *pingpong_hw,
 void *msm_gemini_hw_pingpong_irq(struct msm_gemini_hw_pingpong *pingpong_hw);
 void *msm_gemini_hw_pingpong_active_buffer(struct msm_gemini_hw_pingpong
 	*pingpong_hw);
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+void *msm_gemini_hw_pingpong_nonactive_buffer(struct msm_gemini_hw_pingpong
+	*pingpong_hw);
+#endif
 
-void msm_gemini_hw_irq_clear(void);
+void msm_gemini_hw_irq_clear(uint32_t, uint32_t);
 int msm_gemini_hw_irq_get_status(void);
 long msm_gemini_hw_encode_output_size(void);
 #define MSM_GEMINI_HW_MASK_COMP_FRAMEDONE \

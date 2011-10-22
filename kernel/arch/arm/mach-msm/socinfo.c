@@ -1,57 +1,18 @@
 /* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Code Aurora Forum nor
- *       the names of its contributors may be used to endorse or promote
- *       products derived from this software without specific prior written
- *       permission.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
  *
- * Alternatively, provided that this notice is retained in full, this software
- * may be relicensed by the recipient under the terms of the GNU General Public
- * License version 2 ("GPL") and only version 2, in which case the provisions of
- * the GPL apply INSTEAD OF those given above.  If the recipient relicenses the
- * software under the GPL, then the identification text in the MODULE_LICENSE
- * macro must be changed to reflect "GPLv2" instead of "Dual BSD/GPL".  Once a
- * recipient changes the license terms to the GPL, subsequent recipients shall
- * not relicense under alternate licensing terms, including the BSD or dual
- * BSD/GPL terms.  In addition, the following license statement immediately
- * below and between the words START and END shall also then apply when this
- * software is relicensed under the GPL:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * START
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 and only version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- * details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * END
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  *
  */
 /*
@@ -65,11 +26,14 @@
 #include "smd_private.h"
 
 #define BUILD_ID_LENGTH 32
+
 enum {
 	HW_PLATFORM_UNKNOWN = 0,
 	HW_PLATFORM_SURF    = 1,
 	HW_PLATFORM_FFA     = 2,
 	HW_PLATFORM_FLUID   = 3,
+	HW_PLATFORM_SVLTE_FFA	= 4,
+	HW_PLATFORM_SVLTE_SURF	= 5,
 	HW_PLATFORM_INVALID
 };
 
@@ -77,7 +41,9 @@ char *hw_platform[] = {
 	"Unknown",
 	"Surf",
 	"FFA",
-	"Fluid"
+	"Fluid",
+	"SVLTE_FFA",
+	"SLVTE_SURF"
 };
 
 /* Used to parse shared memory.  Must match the modem. */
@@ -102,6 +68,7 @@ struct socinfo_v3 {
 	/* only valid when format==3 */
 	uint32_t hw_platform;
 };
+
 struct socinfo_v4 {
 	struct socinfo_v3 v3;
 
@@ -109,6 +76,7 @@ struct socinfo_v4 {
 	uint32_t platform_version;
 };
 
+#ifdef CONFIG_MACH_ES209RA
 union socinfo {
 	struct socinfo_v1 v1;
 	struct socinfo_v2 v2;
@@ -116,6 +84,14 @@ union socinfo {
 	struct socinfo_v4 v4;
 };
 static union socinfo *socinfo;
+#else
+static union {
+	struct socinfo_v1 v1;
+	struct socinfo_v2 v2;
+	struct socinfo_v3 v3;
+	struct socinfo_v4 v4;
+} *socinfo;
+#endif
 
 static enum msm_cpu cpu_of_id[] = {
 
@@ -173,6 +149,7 @@ static enum msm_cpu cpu_of_id[] = {
 	/* 8x55 IDs */
 	[74] = MSM_CPU_8X55,
 	[75] = MSM_CPU_8X55,
+	[85] = MSM_CPU_8X55,
 
 	/* Uninitialized IDs are not known to run Linux.
 	   MSM_CPU_UNKNOWN is set to 0 to ensure these IDs are
@@ -227,7 +204,12 @@ uint32_t socinfo_get_platform_version(void)
 
 enum msm_cpu socinfo_get_msm_cpu(void)
 {
+#ifdef CONFIG_ARCH_MSM8X60
+	/* Hardcode CPU for 8x60, which doesn't support socinfo yet. */
+	return MSM_CPU_8X60;
+#else
 	return cur_cpu;
+#endif
 }
 
 static ssize_t
@@ -434,6 +416,7 @@ static void __init socinfo_init_sysdev(void)
 
 }
 
+#ifdef CONFIG_MACH_ES209RA
 static struct socinfo_v3 s1_dummy_socinfo = {
 	.v2 = {
 		.v1 = {
@@ -453,6 +436,7 @@ static struct socinfo_v3 s1_dummy_socinfo = {
 	},
 	.hw_platform = 0,
 };
+#endif
 
 int __init socinfo_init(void)
 {
@@ -469,8 +453,16 @@ int __init socinfo_init(void)
 		socinfo = smem_alloc(SMEM_HW_SW_BUILD_ID,
 				sizeof(struct socinfo_v1));
 
+#ifdef CONFIG_MACH_ES209RA
 	if (!socinfo)
 		socinfo = (union socinfo*)&s1_dummy_socinfo;
+#endif
+
+	if (!socinfo) {
+		pr_err("%s: Can't find SMEM_HW_SW_BUILD_ID\n",
+		       __func__);
+		return -EIO;
+	}
 
 	WARN(!socinfo_get_id(), "Unknown SOC ID!\n");
 	WARN(socinfo_get_id() >= ARRAY_SIZE(cpu_of_id),

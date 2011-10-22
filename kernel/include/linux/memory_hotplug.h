@@ -11,6 +11,7 @@ struct pglist_data;
 struct mem_section;
 
 extern unsigned long movable_reserved_start, movable_reserved_size;
+extern unsigned long low_power_memory_start, low_power_memory_size;
 
 #ifdef CONFIG_MEMORY_HOTPLUG
 
@@ -193,14 +194,6 @@ static inline void register_page_bootmem_info_node(struct pglist_data *pgdat)
 
 #endif /* ! CONFIG_MEMORY_HOTPLUG */
 
-/*
- * Walk through all memory which is registered as resource.
- * arg is (start_pfn, nr_pages, private_arg_pointer)
- */
-extern int walk_memory_resource(unsigned long start_pfn,
-			unsigned long nr_pages, void *arg,
-			int (*func)(unsigned long, unsigned long, void *));
-
 #ifdef CONFIG_MEMORY_HOTREMOVE
 
 extern int is_mem_section_removable(unsigned long pfn, unsigned long nr_pages);
@@ -231,3 +224,5 @@ extern int physical_remove_memory(u64 start, u64 size);
 extern int arch_physical_remove_memory(u64 start, u64 size);
 extern int physical_low_power_memory(u64 start, u64 size);
 extern int arch_physical_low_power_memory(u64 start, u64 size);
+extern int physical_active_memory(u64 start, u64 size);
+extern int arch_physical_active_memory(u64 start, u64 size);

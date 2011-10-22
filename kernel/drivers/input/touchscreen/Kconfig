@@ -29,6 +29,51 @@ config TOUCHSCREEN_ADS7846
 	  To compile this driver as a module, choose M here: the
 	  module will be called ads7846.
 
+config TOUCHSCREEN_AD7877
+	tristate "AD7877 based touchscreens"
+	depends on SPI_MASTER
+	help
+	  Say Y here if you have a touchscreen interface using the
+	  AD7877 controller, and your board-specific initialization
+	  code includes that in its table of SPI devices.
+
+	  If unsure, say N (but it's safe to say "Y").
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ad7877.
+
+config TOUCHSCREEN_AD7879_I2C
+	tristate "AD7879 based touchscreens: AD7879-1 I2C Interface"
+	depends on I2C
+	select TOUCHSCREEN_AD7879
+	help
+	  Say Y here if you have a touchscreen interface using the
+	  AD7879-1/AD7889-1 controller, and your board-specific
+	  initialization code includes that in its table of I2C devices.
+
+	  If unsure, say N (but it's safe to say "Y").
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ad7879.
+
+config TOUCHSCREEN_AD7879_SPI
+	tristate "AD7879 based touchscreens: AD7879 SPI Interface"
+	depends on SPI_MASTER && TOUCHSCREEN_AD7879_I2C = n
+	select TOUCHSCREEN_AD7879
+	help
+	  Say Y here if you have a touchscreen interface using the
+	  AD7879/AD7889 controller, and your board-specific initialization
+	  code includes that in its table of SPI devices.
+
+	  If unsure, say N (but it's safe to say "Y").
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called ad7879.
+
+config TOUCHSCREEN_AD7879
+	tristate
+	default n
+
 config TOUCHSCREEN_BITSY
 	tristate "Compaq iPAQ H3600 (Bitsy) touchscreen"
 	depends on SA1100_BITSY
@@ -58,6 +103,17 @@ config TOUCHSCREEN_CORGI
 	  NOTE: this driver is deprecated, try enable SPI and generic
 	  ADS7846-based touchscreen driver.
 
+config TOUCHSCREEN_CYPRESS_TMG
+	tristate "Support for Cypress TMC i2c touchscreen"
+	depends on I2C
+	help
+	  Say Y here to enable support for cy8ctmg touchcreens.
+
+	  If unsure, say N
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called h3600_ts_input.
+
 config TOUCHSCREEN_DA9034
 	tristate "Touchscreen support for Dialog Semiconductor DA9034"
 	depends on PMIC_DA903X
@@ -65,6 +121,15 @@ config TOUCHSCREEN_DA9034
 	help
 	  Say Y here to enable the support for the touchscreen found
 	  on Dialog Semiconductor DA9034 PMIC.
+
+config TOUCHSCREEN_EETI
+	tristate "EETI touchscreen panel support"
+	depends on I2C
+	help
+	  Say Y here to enable support for I2C connected EETI touch panels.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called eeti_ts.
 
 config TOUCHSCREEN_FUJITSU
 	tristate "Fujitsu serial touchscreen"
@@ -119,6 +184,17 @@ config TOUCHSCREEN_WACOM_W8001
 	  To compile this driver as a module, choose M here: the
 	  module will be called wacom_w8001.
 
+config TOUCHSCREEN_MCS5000
+	tristate "MELFAS MCS-5000 touchscreen"
+	depends on I2C
+	help
+	  Say Y here if you have the MELFAS MCS-5000 touchscreen controller
+	  chip in your system.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called mcs5000_ts.
 
 config TOUCHSCREEN_MTOUCH
 	tristate "MicroTouch serial touchscreens"
@@ -201,7 +277,7 @@ config TOUCHSCREEN_PENMOUNT
 
 config TOUCHSCREEN_MSM
 	bool "Qualcomm MSM touchscreen controller"
-	depends on ARCH_MSM7X30
+	depends on ARCH_MSM7X30 && MARIMBA_TSADC
 	default n
 	help
 	  Say Y here if you have a 4-wire resistive touchscreen panel
@@ -225,11 +301,19 @@ config TOUCHSCREEN_SYNAPTICS_I2C_RMI
 	help
 	  This enables support for Synaptics RMI over I2C based touchscreens.
 
-config TOUCHSCREEN_SYNAPTICS_I2C_RMI_4X
-	tristate "Synaptics i2c touchscreen RMI 4.x"
+config TOUCHSCREEN_CLEARPAD
+        tristate "Synaptics ClearPad"
+	default n
+        help
+          Say Y here to enable Synaptics ClearPad touchscreen.
+
+config TOUCHSCREEN_CLEARPAD_I2C
+        tristate "Synaptics ClearPad I2C"
 	depends on I2C
-	help
-	  This enables support for Synaptics RMI 4.x over I2C based touchscreens.
+	depends on TOUCHSCREEN_CLEARPAD
+	default n
+        help
+          Say Y here to enable Synaptics ClearPad I2C touchscreen.
 
 config TOUCHSCREEN_TOUCHRIGHT
 	tristate "Touchright serial touchscreen"
@@ -321,17 +405,45 @@ config TOUCHSCREEN_WM9713
 	  Say Y here to enable support for the Wolfson Microelectronics
 	  WM9713 touchscreen controller.
 
+config TOUCHSCREEN_WM97XX_ATMEL
+	tristate "WM97xx Atmel accelerated touch"
+	depends on TOUCHSCREEN_WM97XX && (AVR32 || ARCH_AT91)
+	help
+	  Say Y here for support for streaming mode with WM97xx touchscreens
+	  on Atmel AT91 or AVR32 systems with an AC97C module.
+
+	  Be aware that this will use channel B in the controller for
+	  streaming data, this must not conflict with other AC97C drivers.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the module will
+	  be called atmel-wm97xx.
+
 config TOUCHSCREEN_WM97XX_MAINSTONE
-	tristate "WM97xx Mainstone accelerated touch"
+	tristate "WM97xx Mainstone/Palm accelerated touch"
 	depends on TOUCHSCREEN_WM97XX && ARCH_PXA
 	help
 	  Say Y here for support for streaming mode with WM97xx touchscreens
-	  on Mainstone systems.
+	  on Mainstone, Palm Tungsten T5, TX and LifeDrive systems.
 
 	  If unsure, say N.
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called mainstone-wm97xx.
+
+config TOUCHSCREEN_WM97XX_ZYLONITE
+	tristate "Zylonite accelerated touch"
+	depends on TOUCHSCREEN_WM97XX && MACH_ZYLONITE
+	select TOUCHSCREEN_WM9713
+	help
+	  Say Y here for support for streaming mode with the touchscreen
+	  on Zylonite systems.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called zylonite-wm97xx.
 
 config TOUCHSCREEN_USB_COMPOSITE
 	tristate "USB Touchscreen Driver"
@@ -349,6 +461,7 @@ config TOUCHSCREEN_USB_COMPOSITE
 	  - IRTOUCHSYSTEMS/UNITOP
 	  - IdealTEK URTC1000
 	  - GoTop Super_Q2/GogoPen/PenPower tablets
+	  - JASTEC USB Touch Controller/DigiTech DTR-02U
 
 	  Have a look at <http://linux.chapter7.ch/touchkit/> for
 	  a usage description and the required user-space stuff.
@@ -411,6 +524,16 @@ config TOUCHSCREEN_USB_GOTOP
 	bool "GoTop Super_Q2/GogoPen/PenPower tablet device support" if EMBEDDED
 	depends on TOUCHSCREEN_USB_COMPOSITE
 
+config TOUCHSCREEN_USB_JASTEC
+	default y
+	bool "JASTEC/DigiTech DTR-02U USB touch controller device support" if EMBEDDED
+	depends on TOUCHSCREEN_USB_COMPOSITE
+
+config TOUCHSCREEN_USB_E2I
+	default y
+	bool "e2i Touchscreen controller (e.g. from Mimo 740)"
+	depends on TOUCHSCREEN_USB_COMPOSITE
+
 config TOUCHSCREEN_TOUCHIT213
 	tristate "Sahara TouchIT-213 touchscreen"
 	select SERIO
@@ -432,56 +555,6 @@ config TOUCHSCREEN_TSC2007
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called tsc2007.
-
-config TOUCHSCREEN_MSM_LEGACY
-	default n
-	tristate "MSM Touchscreen"
-	depends on ARCH_MSM && !ARCH_MSM7X30
-	help
-	  Say Y here if you have a touchscreen interface using MSM
-	  touchscreen controller.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called msm_touch.
-
-config TOUCHSCREEN_CY8CTMA300
-	default n
-	tristate "Cypress CY8CTMA300 touchscreen"
-	depends on I2C
-	help
-	  Say Y here if you have a Cypress CY8CTMA300 touchscreen
-	  connected to your system.
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called cy8ctma300.
-
-config TOUCHSCREEN_CY8CTMA300_SER
-	default n
-	tristate "Cypress CY8CTMA300 serial touchscreen"
-	select SERIO
-	help
-	  Say Y here if you have a Cypress CY8CTMA300 touchscreen
-	  connected to your system's UART.
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called cy8ctma300_ser.
-
-config TOUCHSCREEN_CY8CTMA300_SPI
-	default n
-	depends on SPI_MASTER
-	tristate "Cypress CY8CTMA300 spi touchscreen"
-	help
-	  Say Y here if you have a Cypress CY8CTMA300 touchscreen
-	  connected to your system's spi bus.
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here: the
-	  module will be called cy8ctma300_spi.
 
 config TOUCHSCREEN_ES209RA_TOUCH
 	default n
@@ -511,6 +584,17 @@ config TOUCHSCREEN_ES209RA_TOUCH_MT
 	  To compile this driver as a module, choose M here: the
 	  module will be called es209ra_touch_mt.
 
+config TOUCHSCREEN_MSM_LEGACY
+	default n
+	tristate "MSM Touchscreen"
+	depends on ARCH_MSM && !ARCH_MSM7X30
+	help
+	  Say Y here if you have a touchscreen interface using MSM
+	  touchscreen controller.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called msm_touch.
+
 config ANDROID_TOUCHSCREEN_MSM_HACKS
 	default y
 	depends on TOUCHSCREEN_MSM_LEGACY
@@ -520,6 +604,90 @@ config ANDROID_TOUCHSCREEN_MSM_HACKS
 	  MSM/QSD based Surf or FFAs. These hacks are required inorder
 	  to Android framework to receive adjusted x, y co-ordinates
 	  until proper calibration framework is in place.
+
+config TOUCHSCREEN_W90X900
+	tristate "W90P910 touchscreen driver"
+	depends on HAVE_CLK
+	help
+	  Say Y here if you have a W90P910 based touchscreen.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called w90p910_ts.
+
+config TOUCHSCREEN_PCAP
+	tristate "Motorola PCAP touchscreen"
+	depends on EZX_PCAP
+	help
+	  Say Y here if you have a Motorola EZX telephone and
+	  want to enable support for the built-in touchscreen.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called pcap_ts.
+
+config TOUCHSCREEN_CY8C_TS
+	tristate "Cypress TMA300-TMG200 based touchscreens"
+	depends on I2C
+	default n
+	help
+	  Say Y here if you have a Cypress TMA300/TMG200 based touchscreen.
+	  TMA300 is a multi-touch screen which can report upto 10
+	  touches at a time. TMG200 supports 2 touches.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cy8c_ts.
+
+config TOUCHSCREEN_CY8CTMA300
+	default y
+	depends on MACH_SEMC_ZEUS && SPI
+        tristate "Cypress CY8CTMA300 hardware"
+        help
+          Capactive touchscreen for SEMC devices using new Cypress hardware.
+
+config TOUCHSCREEN_CY8CTMA300_SPI
+	default n
+	depends on SPI_MASTER
+	tristate "Cypress CY8CTMA300 spi touchscreen"
+	help
+	  Say Y here if you have a Cypress CY8CTMA300 touchscreen
+	  connected to your system's spi bus.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cy8ctma300_spi.
+
+config CY8CTMA300_SPI_MAX_X
+	int "The maximum x coordinate of Touchscreen"
+	default "480"
+	depends on TOUCHSCREEN_CY8CTMA300_SPI
+	help
+	  The default value is 480. Change this according to the LCD
+	  screen resolution.
+
+config CY8CTMA300_SPI_MAX_Y
+	int "The maximum y coordinate of Touchscreen"
+	default "854"
+	depends on TOUCHSCREEN_CY8CTMA300_SPI
+	help
+	  The default value is 854. Change this according to the LCD
+	  screen resolution.
+
+config CY8CTMA300_SPI_MAX_Z
+	int "The maximum z value (pressure) of Touchscreen"
+	default "255"
+	depends on TOUCHSCREEN_CY8CTMA300_SPI
+	help
+	  The default value is 255 (the maximum value).
+
+config CY8CTMA300_SPI_WIDTH_MAJOR
+	int "Pseudo value for ABS_MT_WIDTH_MAJOR reporting"
+	default "10"
+	depends on TOUCHSCREEN_CY8CTMA300_SPI
+	help
+	  The device doesn't have actual tool width.
+	  This pseudo value is used to report ABS_MT_WIDTH_MAJOR.
 
 config TOUCHSCREEN_CYTTSP_I2C
 	default n
@@ -554,4 +722,37 @@ config TOUCHSCREEN_CYTTSP_CORE
 	help
 	  Always activated for Cypress TTSP touchscreen
 
+config TOUCHSCREEN_CYTTSP_MAX_X
+	default 479
+	int "Cypress TTSP touchscreen X resolution"
+	depends on TOUCHSCREEN_CYTTSP_CORE
+
+config TOUCHSCREEN_CYTTSP_MAX_Y
+	default 853
+	int "Cypress TTSP touchscreen Y resolution"
+	depends on TOUCHSCREEN_CYTTSP_CORE
+
+config TOUCHSCREEN_CYTTSP_MAX_Z
+	default 100
+	int "Cypress TTSP touchscreen Z resolution"
+	depends on TOUCHSCREEN_CYTTSP_CORE
+
+config TOUCHSCREEN_CYTTSP_KEY
+	default n
+	bool "Cypress TTSP touchkey"
+	depends on TOUCHSCREEN_CYTTSP_CORE
+	help
+	  Activated for Cypress TTSP touchkey function
+
+config TOUCHSCREEN_CYTTSP_CHARGER_MODE
+	default n
+	bool "Cypress TTSP touch CHARGER MODE"
+	depends on TOUCHSCREEN_CYTTSP_CORE
+	help
+	  Activated for Cypress TTSP touch charger mode
+
+config TOUCHSCREEN_CYTTSP_ACT_INTRVL
+	default 0
+	int "Cypress TTSP active interval"
+	depends on TOUCHSCREEN_CYTTSP_CORE
 endif

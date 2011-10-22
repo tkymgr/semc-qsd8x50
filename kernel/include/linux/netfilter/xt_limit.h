@@ -19,7 +19,6 @@ struct xt_rateinfo {
 	__u32 credit; /* moved to xt_limit_priv */
 	__u32 credit_cap, cost;
 
-	/* Ugly, ugly fucker. */
-	struct xt_rateinfo *master;
+	struct xt_limit_priv *master;
 };
 #endif /*_XT_RATE_H*/

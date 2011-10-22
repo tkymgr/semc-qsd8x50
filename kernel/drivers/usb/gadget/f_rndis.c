@@ -4,6 +4,7 @@
  * Copyright (C) 2003-2005,2008 David Brownell
  * Copyright (C) 2003-2004 Robert Schwebel, Benedikt Spranger
  * Copyright (C) 2008 Nokia Corporation
+ * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,17 +32,6 @@
 
 #include "u_ether.h"
 #include "rndis.h"
-
-#define DBG(d, fmt, args...) \
-	dev_dbg(&(d)->gadget->dev , fmt , ## args)
-#define VDBG(d, fmt, args...) \
-	dev_vdbg(&(d)->gadget->dev , fmt , ## args)
-#define ERROR(d, fmt, args...) \
-	dev_err(&(d)->gadget->dev , fmt , ## args)
-#define WARNING(d, fmt, args...) \
-	dev_warn(&(d)->gadget->dev , fmt , ## args)
-#define INFO(d, fmt, args...) \
-	dev_info(&(d)->gadget->dev , fmt , ## args)
 
 
 /*
@@ -154,9 +144,10 @@ static struct usb_interface_descriptor rndis_control_intf = {
 	/* status endpoint is optional; this could be patched later */
 	.bNumEndpoints =	1,
 #ifdef CONFIG_USB_ANDROID_RNDIS_WCEIS
+	/* "Wireless" RNDIS; auto-detected by Windows */
 	.bInterfaceClass =	USB_CLASS_WIRELESS_CONTROLLER,
-	.bInterfaceSubClass =   1,
-	.bInterfaceProtocol =   3,
+	.bInterfaceSubClass = 1,
+	.bInterfaceProtocol =	3,
 #else
 	.bInterfaceClass =	USB_CLASS_COMM,
 	.bInterfaceSubClass =   USB_CDC_SUBCLASS_ACM,
@@ -170,7 +161,7 @@ static struct usb_cdc_header_desc header_desc = {
 	.bDescriptorType =	USB_DT_CS_INTERFACE,
 	.bDescriptorSubType =	USB_CDC_HEADER_TYPE,
 
-	.bcdCDC =		__constant_cpu_to_le16(0x0110),
+	.bcdCDC =		cpu_to_le16(0x0110),
 };
 
 static struct usb_cdc_call_mgmt_descriptor call_mgmt_descriptor = {
@@ -220,7 +211,7 @@ static struct usb_endpoint_descriptor fs_notify_desc = {
 
 	.bEndpointAddress =	USB_DIR_IN,
 	.bmAttributes =		USB_ENDPOINT_XFER_INT,
-	.wMaxPacketSize =	__constant_cpu_to_le16(STATUS_BYTECOUNT),
+	.wMaxPacketSize =	cpu_to_le16(STATUS_BYTECOUNT),
 	.bInterval =		1 << LOG2_STATUS_INTERVAL_MSEC,
 };
 
@@ -264,7 +255,7 @@ static struct usb_endpoint_descriptor hs_notify_desc = {
 
 	.bEndpointAddress =	USB_DIR_IN,
 	.bmAttributes =		USB_ENDPOINT_XFER_INT,
-	.wMaxPacketSize =	__constant_cpu_to_le16(STATUS_BYTECOUNT),
+	.wMaxPacketSize =	cpu_to_le16(STATUS_BYTECOUNT),
 	.bInterval =		LOG2_STATUS_INTERVAL_MSEC + 4,
 };
 static struct usb_endpoint_descriptor hs_in_desc = {
@@ -273,7 +264,7 @@ static struct usb_endpoint_descriptor hs_in_desc = {
 
 	.bEndpointAddress =	USB_DIR_IN,
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize =	__constant_cpu_to_le16(512),
+	.wMaxPacketSize =	cpu_to_le16(512),
 };
 
 static struct usb_endpoint_descriptor hs_out_desc = {
@@ -282,7 +273,7 @@ static struct usb_endpoint_descriptor hs_out_desc = {
 
 	.bEndpointAddress =	USB_DIR_OUT,
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
-	.wMaxPacketSize =	__constant_cpu_to_le16(512),
+	.wMaxPacketSize =	cpu_to_le16(512),
 };
 
 static struct usb_descriptor_header *eth_hs_function[] = {
@@ -325,12 +316,17 @@ static struct usb_ether_platform_data *rndis_pdata;
 
 /*-------------------------------------------------------------------------*/
 
-static struct sk_buff *rndis_add_header(struct sk_buff *skb)
+static struct sk_buff *rndis_add_header(struct gether *port,
+					struct sk_buff *skb)
 {
-	skb = skb_realloc_headroom(skb, sizeof(struct rndis_packet_msg_type));
-	if (skb)
-		rndis_add_hdr(skb);
-	return skb;
+	struct sk_buff *skb2;
+
+	skb2 = skb_realloc_headroom(skb, sizeof(struct rndis_packet_msg_type));
+	if (skb2)
+		rndis_add_hdr(skb2);
+
+	dev_kfree_skb_any(skb);
+	return skb2;
 }
 
 static void rndis_response_available(void *_rndis)
@@ -492,7 +488,6 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 {
 	struct f_rndis		*rndis = func_to_rndis(f);
 	struct usb_composite_dev *cdev = f->config->cdev;
-	int ret = 0;
 
 	/* we know alt == 0 */
 
@@ -506,13 +501,7 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 		rndis->notify_desc = ep_choose(cdev->gadget,
 				rndis->hs.notify,
 				rndis->fs.notify);
-
-		ret = usb_ep_enable(rndis->notify, rndis->notify_desc);
-		if (ret) {
-			ERROR(cdev, "can't enable %s, result %d\n",
-						rndis->notify->name, ret);
-			return ret;
-		}
+		usb_ep_enable(rndis->notify, rndis->notify_desc);
 		rndis->notify->driver_data = rndis;
 
 	} else if (intf == rndis->data_id) {
@@ -558,7 +547,7 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 	} else
 		goto fail;
 
-	return ret;
+	return 0;
 fail:
 	return -EINVAL;
 }
@@ -869,7 +858,7 @@ int rndis_bind_config(struct usb_configuration *c, u8 ethaddr[ETH_ALEN])
 
 #ifdef CONFIG_USB_ANDROID_RNDIS
 	/* start disabled */
-	rndis->port.func.disabled = 1;
+	rndis->port.func.enabled = 0;
 #endif
 
 	status = usb_add_function(c, &rndis->port.func);

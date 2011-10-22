@@ -33,17 +33,6 @@
 
 #include <linux/usb/android_composite.h>
 
-#define DBG(d, fmt, args...) \
-	dev_dbg(&(d)->gadget->dev , fmt , ## args)
-#define VDBG(d, fmt, args...) \
-	dev_vdbg(&(d)->gadget->dev , fmt , ## args)
-#define ERROR(d, fmt, args...) \
-	dev_err(&(d)->gadget->dev , fmt , ## args)
-#define WARNING(d, fmt, args...) \
-	dev_warn(&(d)->gadget->dev , fmt , ## args)
-#define INFO(d, fmt, args...) \
-	dev_info(&(d)->gadget->dev , fmt , ## args)
-
 #define BULK_BUFFER_SIZE           4096
 
 /* number of tx requests to allocate */
@@ -627,7 +616,7 @@ static int adb_bind_config(struct usb_configuration *c)
 	dev->function.disable = adb_function_disable;
 
 	/* start disabled */
-	dev->function.disabled = 1;
+	dev->function.enabled = 0;
 
 	/* _adb_dev must be set before calling usb_gadget_register_driver */
 	_adb_dev = dev;

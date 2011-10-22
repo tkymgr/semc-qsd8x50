@@ -70,7 +70,7 @@ struct sched_param {
 #include <linux/smp.h>
 #include <linux/sem.h>
 #include <linux/signal.h>
-#include <linux/fs_struct.h>
+#include <linux/path.h>
 #include <linux/compiler.h>
 #include <linux/completion.h>
 #include <linux/pid.h>
@@ -94,12 +94,13 @@ struct sched_param {
 
 #include <asm/processor.h>
 
-struct mem_cgroup;
 struct exec_domain;
 struct futex_pi_state;
 struct robust_list_head;
 struct bio;
-struct bts_tracer;
+struct fs_struct;
+struct bts_context;
+struct perf_event_context;
 
 /*
  * List of flags we want to share for kernel threads,
@@ -138,7 +139,6 @@ DECLARE_PER_CPU(unsigned long, process_counts);
 extern int nr_processes(void);
 extern unsigned long nr_running(void);
 extern unsigned long nr_uninterruptible(void);
-extern unsigned long nr_active(void);
 extern unsigned long nr_iowait(void);
 extern unsigned long nr_iowait_cpu(void);
 extern unsigned long this_cpu_load(void);
@@ -215,7 +215,8 @@ extern unsigned long long time_sync_thresh;
 #define task_is_stopped_or_traced(task)	\
 			((task->state & (__TASK_STOPPED | __TASK_TRACED)) != 0)
 #define task_contributes_to_load(task)	\
-				((task->state & TASK_UNINTERRUPTIBLE) != 0)
+				((task->state & TASK_UNINTERRUPTIBLE) != 0 && \
+				 (task->flags & PF_FREEZING) == 0)
 
 #define __set_task_state(tsk, state_value)		\
 	do { (tsk)->state = (state_value); } while (0)
@@ -260,7 +261,7 @@ extern asmlinkage void schedule_tail(struct task_struct *prev);
 extern void init_idle(struct task_struct *idle, int cpu);
 extern void init_idle_bootup_task(struct task_struct *idle);
 
-extern int runqueue_is_locked(void);
+extern int runqueue_is_locked(int cpu);
 extern void task_rq_unlock_wait(struct task_struct *p);
 
 extern cpumask_var_t nohz_cpu_mask;
@@ -308,7 +309,7 @@ extern void softlockup_tick(void);
 extern void touch_softlockup_watchdog(void);
 extern void touch_all_softlockup_watchdogs(void);
 extern int proc_dosoftlockup_thresh(struct ctl_table *table, int write,
-				    struct file *filp, void __user *buffer,
+				    void __user *buffer,
 				    size_t *lenp, loff_t *ppos);
 extern unsigned int  softlockup_panic;
 extern int softlockup_thresh;
@@ -329,14 +330,10 @@ extern unsigned int  sysctl_hung_task_panic;
 extern unsigned long sysctl_hung_task_check_count;
 extern unsigned long sysctl_hung_task_timeout_secs;
 extern unsigned long sysctl_hung_task_warnings;
-extern int softlockup_thresh;
-#else
-static inline void spawn_softlockup_task(void)
-{
-}
-
+extern int proc_dohung_task_timeout_secs(struct ctl_table *table, int write,
+					 void __user *buffer,
+					 size_t *lenp, loff_t *ppos);
 #endif
-
 
 /* Attach to any functions which should be ignored in wchan output. */
 #define __sched		__attribute__((__section__(".sched.text")))
@@ -359,8 +356,20 @@ extern int mutex_spin_on_owner(struct mutex *lock, struct thread_info *owner);
 struct nsproxy;
 struct user_namespace;
 
-/* Maximum number of active map areas.. This is a random (large) number */
-#define DEFAULT_MAX_MAP_COUNT	65536
+/*
+ * Default maximum number of active map areas, this limits the number of vmas
+ * per mm struct. Users can overwrite this number by sysctl but there is a
+ * problem.
+ *
+ * When a program's coredump is generated as ELF format, a section is created
+ * per a vma. In ELF, the number of sections is represented in unsigned short.
+ * This means the number of sections should be smaller than 65535 at coredump.
+ * Because the kernel adds some informative sections to a image of program at
+ * generating coredump, we need some margin. The number of extra sections is
+ * 1-3 now and depends on arch. We use "5" as safe margin, here.
+ */
+#define MAPCOUNT_ELF_CORE_MARGIN	(5)
+#define DEFAULT_MAX_MAP_COUNT	(USHORT_MAX - MAPCOUNT_ELF_CORE_MARGIN)
 
 extern int sysctl_max_map_count;
 
@@ -412,8 +421,24 @@ extern void arch_unmap_area_topdown(struct mm_struct *, unsigned long);
 		(mm)->hiwater_vm = (mm)->total_vm;	\
 } while (0)
 
-#define get_mm_hiwater_rss(mm)	max((mm)->hiwater_rss, get_mm_rss(mm))
-#define get_mm_hiwater_vm(mm)	max((mm)->hiwater_vm, (mm)->total_vm)
+static inline unsigned long get_mm_hiwater_rss(struct mm_struct *mm)
+{
+	return max(mm->hiwater_rss, get_mm_rss(mm));
+}
+
+static inline void setmax_mm_hiwater_rss(unsigned long *maxrss,
+					 struct mm_struct *mm)
+{
+	unsigned long hiwater_rss = get_mm_hiwater_rss(mm);
+
+	if (*maxrss < hiwater_rss)
+		*maxrss = hiwater_rss;
+}
+
+static inline unsigned long get_mm_hiwater_vm(struct mm_struct *mm)
+{
+	return max(mm->hiwater_vm, mm->total_vm);
+}
 
 extern void set_dumpable(struct mm_struct *mm, int value);
 extern int get_dumpable(struct mm_struct *mm);
@@ -569,9 +594,12 @@ struct signal_struct {
 	struct pid *leader_pid;
 	ktime_t it_real_incr;
 
-	/* ITIMER_PROF and ITIMER_VIRTUAL timers for the process */
-	cputime_t it_prof_expires, it_virt_expires;
-	cputime_t it_prof_incr, it_virt_incr;
+	/*
+	 * ITIMER_PROF and ITIMER_VIRTUAL timers for the process, we use
+	 * CPUCLOCK_PROF and CPUCLOCK_VIRT for indexing array as these
+	 * values are defined to 0 and 1 respectively
+	 */
+	struct cpu_itimer it[2];
 
 	/*
 	 * Thread group totals for process CPU timers.
@@ -584,24 +612,7 @@ struct signal_struct {
 
 	struct list_head cpu_timers[3];
 
-	/* job control IDs */
-
-	/*
-	 * pgrp and session fields are deprecated.
-	 * use the task_session_Xnr and task_pgrp_Xnr routines below
-	 */
-
-	union {
-		pid_t pgrp __deprecated;
-		pid_t __pgrp;
-	};
-
 	struct pid *tty_old_pgrp;
-
-	union {
-		pid_t session __deprecated;
-		pid_t __session;
-	};
 
 	/* boolean value for session group leader */
 	int leader;
@@ -719,7 +730,7 @@ struct user_struct {
 	struct task_group *tg;
 #ifdef CONFIG_SYSFS
 	struct kobject kobj;
-	struct work_struct work;
+	struct delayed_work work;
 #endif
 #endif
 
@@ -821,18 +832,19 @@ enum cpu_idle_type {
 #define SCHED_LOAD_SCALE_FUZZ	SCHED_LOAD_SCALE
 
 #ifdef CONFIG_SMP
-#define SD_LOAD_BALANCE		1	/* Do load balancing on this domain. */
-#define SD_BALANCE_NEWIDLE	2	/* Balance when about to become idle */
-#define SD_BALANCE_EXEC		4	/* Balance on exec */
-#define SD_BALANCE_FORK		8	/* Balance on fork, clone */
-#define SD_WAKE_IDLE		16	/* Wake to idle CPU on task wakeup */
-#define SD_WAKE_AFFINE		32	/* Wake task to waking CPU */
-#define SD_WAKE_BALANCE		64	/* Perform balancing at task wakeup */
-#define SD_SHARE_CPUPOWER	128	/* Domain members share cpu power */
-#define SD_POWERSAVINGS_BALANCE	256	/* Balance for power savings */
-#define SD_SHARE_PKG_RESOURCES	512	/* Domain members share cpu pkg resources */
-#define SD_SERIALIZE		1024	/* Only a single load balancing instance */
-#define SD_WAKE_IDLE_FAR	2048	/* Gain latency sacrificing cache hit */
+#define SD_LOAD_BALANCE		0x0001	/* Do load balancing on this domain. */
+#define SD_BALANCE_NEWIDLE	0x0002	/* Balance when about to become idle */
+#define SD_BALANCE_EXEC		0x0004	/* Balance on exec */
+#define SD_BALANCE_FORK		0x0008	/* Balance on fork, clone */
+#define SD_BALANCE_WAKE		0x0010  /* Balance on wakeup */
+#define SD_WAKE_AFFINE		0x0020	/* Wake task to waking CPU */
+#define SD_PREFER_LOCAL		0x0040  /* Prefer to keep tasks local to this domain */
+#define SD_SHARE_CPUPOWER	0x0080	/* Domain members share cpu power */
+#define SD_POWERSAVINGS_BALANCE	0x0100	/* Balance for power savings */
+#define SD_SHARE_PKG_RESOURCES	0x0200	/* Domain members share cpu pkg resources */
+#define SD_SERIALIZE		0x0400	/* Only a single load balancing instance */
+
+#define SD_PREFER_SIBLING	0x1000	/* Prefer to place tasks in a sibling domain */
 
 enum powersavings_balance_level {
 	POWERSAVINGS_BALANCE_NONE = 0,  /* No power saving load balance */
@@ -852,7 +864,7 @@ static inline int sd_balance_for_mc_power(void)
 	if (sched_smt_power_savings)
 		return SD_POWERSAVINGS_BALANCE;
 
-	return 0;
+	return SD_PREFER_SIBLING;
 }
 
 static inline int sd_balance_for_package_power(void)
@@ -860,7 +872,7 @@ static inline int sd_balance_for_package_power(void)
 	if (sched_mc_power_savings | sched_smt_power_savings)
 		return SD_POWERSAVINGS_BALANCE;
 
-	return 0;
+	return SD_PREFER_SIBLING;
 }
 
 /*
@@ -882,17 +894,21 @@ struct sched_group {
 
 	/*
 	 * CPU power of this group, SCHED_LOAD_SCALE being max power for a
-	 * single CPU. This is read only (except for setup, hotplug CPU).
-	 * Note : Never change cpu_power without recompute its reciprocal
+	 * single CPU.
 	 */
-	unsigned int __cpu_power;
-	/*
-	 * reciprocal value of cpu_power to avoid expensive divides
-	 * (see include/linux/reciprocal_div.h)
-	 */
-	u32 reciprocal_cpu_power;
+	unsigned int cpu_power;
 
-	unsigned long cpumask[];
+	/*
+	 * The CPUs this group covers.
+	 *
+	 * NOTE: this field is variable length. (Allocated dynamically
+	 * by attaching extra space to the end of the structure,
+	 * depending on how many CPUs the kernel has booted up with)
+	 *
+	 * It is also be embedded into static data structures at build
+	 * time. (See 'struct static_sched_group' in kernel/sched.c)
+	 */
+	unsigned long cpumask[0];
 };
 
 static inline struct cpumask *sched_group_cpus(struct sched_group *sg)
@@ -979,8 +995,17 @@ struct sched_domain {
 	char *name;
 #endif
 
-	/* span of all CPUs in this domain */
-	unsigned long span[];
+	/*
+	 * Span of all CPUs in this domain.
+	 *
+	 * NOTE: this field is variable length. (Allocated dynamically
+	 * by attaching extra space to the end of the structure,
+	 * depending on how many CPUs the kernel has booted up with)
+	 *
+	 * It is also be embedded into static data structures at build
+	 * time. (See 'struct static_sched_domain' in kernel/sched.c)
+	 */
+	unsigned long span[0];
 };
 
 static inline struct cpumask *sched_domain_span(struct sched_domain *sd)
@@ -1045,13 +1070,13 @@ struct sched_class {
 	void (*dequeue_task) (struct rq *rq, struct task_struct *p, int sleep);
 	void (*yield_task) (struct rq *rq);
 
-	void (*check_preempt_curr) (struct rq *rq, struct task_struct *p, int sync);
+	void (*check_preempt_curr) (struct rq *rq, struct task_struct *p, int flags);
 
 	struct task_struct * (*pick_next_task) (struct rq *rq);
 	void (*put_prev_task) (struct rq *rq, struct task_struct *p);
 
 #ifdef CONFIG_SMP
-	int  (*select_task_rq)(struct task_struct *p, int sync);
+	int  (*select_task_rq)(struct task_struct *p, int sd_flag, int flags);
 
 	unsigned long (*load_balance) (struct rq *this_rq, int this_cpu,
 			struct rq *busiest, unsigned long max_load_move,
@@ -1142,7 +1167,6 @@ struct sched_entity {
 	u64			exec_max;
 	u64			slice_max;
 
-	u64			nr_migrations;
 	u64			nr_migrations_cold;
 	u64			nr_failed_migrations_affine;
 	u64			nr_failed_migrations_running;
@@ -1223,7 +1247,6 @@ struct task_struct {
 	 * a short time
 	 */
 	unsigned char fpu_counter;
-	s8 oomkilladj; /* OOM kill score adjustment (bit shift). */
 #ifdef CONFIG_BLK_DEV_IO_TRACE
 	unsigned int btrace_seq;
 #endif
@@ -1248,7 +1271,6 @@ struct task_struct {
 	struct mm_struct *mm, *active_mm;
 
 /* task state */
-	struct linux_binfmt *binfmt;
 	int exit_state;
 	int exit_code, exit_signal;
 	int pdeath_signal;  /*  The signal sent when the parent dies  */
@@ -1293,18 +1315,11 @@ struct task_struct {
 	struct list_head ptraced;
 	struct list_head ptrace_entry;
 
-#ifdef CONFIG_X86_PTRACE_BTS
 	/*
 	 * This is the tracer handle for the ptrace BTS extension.
 	 * This field actually belongs to the ptracer task.
 	 */
-	struct bts_tracer *bts;
-	/*
-	 * The buffer to hold the BTS data.
-	 */
-	void *bts_buffer;
-	size_t bts_size;
-#endif /* CONFIG_X86_PTRACE_BTS */
+	struct bts_context *bts;
 
 	/* PID/PID hash table linkage. */
 	struct pid_link pids[PIDTYPE_MAX];
@@ -1331,7 +1346,6 @@ struct task_struct {
 					 * credentials (COW) */
 	const struct cred *cred;	/* effective (overridable) subjective task
 					 * credentials (COW) */
-	struct mutex cred_exec_mutex;	/* execve vs ptrace cred calculation mutex */
 	struct mutex cred_guard_mutex;	/* guard against foreign influences on
 					 * credential calculations
 					 * (notably. ptrace) */
@@ -1347,9 +1361,8 @@ struct task_struct {
 /* ipc stuff */
 	struct sysv_sem sysvsem;
 #endif
-#ifdef CONFIG_DETECT_SOFTLOCKUP
+#ifdef CONFIG_DETECT_HUNG_TASK
 /* hung task detection */
-	unsigned long last_switch_timestamp;
 	unsigned long last_switch_count;
 #endif
 /* CPU-specific state of this task */
@@ -1453,7 +1466,6 @@ struct task_struct {
 #endif
 #ifdef CONFIG_CPUSETS
 	nodemask_t mems_allowed;	/* Protected by alloc_lock */
-	int cpuset_mems_generation;
 	int cpuset_mem_spread_rotor;
 #endif
 #ifdef CONFIG_CGROUPS
@@ -1563,16 +1575,6 @@ static inline int rt_task(struct task_struct *p)
 	return rt_prio(p->prio);
 }
 
-static inline void set_task_session(struct task_struct *tsk, pid_t session)
-{
-	tsk->signal->__session = session;
-}
-
-static inline void set_task_pgrp(struct task_struct *tsk, pid_t pgrp)
-{
-	tsk->signal->__pgrp = pgrp;
-}
-
 static inline struct pid *task_pid(struct task_struct *task)
 {
 	return task->pids[PIDTYPE_PID].pid;
@@ -1621,11 +1623,15 @@ static inline pid_t task_pid_nr(struct task_struct *tsk)
 	return tsk->pid;
 }
 
-pid_t task_pid_nr_ns(struct task_struct *tsk, struct pid_namespace *ns);
+static inline pid_t task_pid_nr_ns(struct task_struct *tsk,
+					struct pid_namespace *ns)
+{
+	return __task_pid_nr_ns(tsk, PIDTYPE_PID, ns);
+}
 
 static inline pid_t task_pid_vnr(struct task_struct *tsk)
 {
-	return pid_vnr(task_pid(tsk));
+	return __task_pid_nr_ns(tsk, PIDTYPE_PID, NULL);
 }
 
 
@@ -1668,18 +1674,8 @@ static inline pid_t task_session_vnr(struct task_struct *tsk)
 /* obsolete, do not use */
 static inline pid_t task_pgrp_nr(struct task_struct *tsk)
 {
-	return tsk->signal->__pgrp;
+	return task_pgrp_nr_ns(tsk, &init_pid_ns);
 }
-
-pid_t task_pgrp_nr_ns(struct task_struct *tsk, struct pid_namespace *ns);
-
-static inline pid_t task_session_nr(struct task_struct *tsk)
-{
-	return tsk->signal->__session;
-}
-
-pid_t task_session_nr_ns(struct task_struct *tsk, struct pid_namespace *ns);
-
 
 /**
  * pid_alive - check that a task structure is not stale
@@ -1753,7 +1749,7 @@ extern int task_free_unregister(struct notifier_block *n);
 #define PF_FROZEN	0x00010000	/* frozen for system suspend */
 #define PF_FSTRANS	0x00020000	/* inside a filesystem transaction */
 #define PF_KSWAPD	0x00040000	/* I am kswapd */
-#define PF_SWAPOFF	0x00080000	/* I am in swapoff */
+#define PF_OOM_ORIGIN	0x00080000	/* Allocating much memory to others */
 #define PF_LESS_THROTTLE 0x00100000	/* Throttle me less: I clean memory */
 #define PF_KTHREAD	0x00200000	/* I am a kernel thread */
 #define PF_RANDOMIZE	0x00400000	/* randomize virtual address space */
@@ -1907,7 +1903,6 @@ extern unsigned int sysctl_sched_shares_ratelimit;
 extern unsigned int sysctl_sched_shares_thresh;
 extern unsigned int sysctl_sched_child_runs_first;
 #ifdef CONFIG_SCHED_DEBUG
-extern unsigned int sysctl_sched_child_runs_first;
 extern unsigned int sysctl_sched_features;
 extern unsigned int sysctl_sched_migration_cost;
 extern unsigned int sysctl_sched_nr_migrate;
@@ -1915,7 +1910,7 @@ extern unsigned int sysctl_sched_time_avg;
 extern unsigned int sysctl_timer_migration;
 
 int sched_nr_latency_handler(struct ctl_table *table, int write,
-		struct file *file, void __user *buffer, size_t *length,
+		void __user *buffer, size_t *length,
 		loff_t *ppos);
 #endif
 #ifdef CONFIG_SCHED_DEBUG
@@ -1933,7 +1928,7 @@ extern unsigned int sysctl_sched_rt_period;
 extern int sysctl_sched_rt_runtime;
 
 int sched_rt_handler(struct ctl_table *table, int write,
-		struct file *filp, void __user *buffer, size_t *lenp,
+		void __user *buffer, size_t *lenp,
 		loff_t *ppos);
 
 extern unsigned int sysctl_sched_compat_yield;
@@ -1995,9 +1990,6 @@ extern struct pid_namespace init_pid_ns;
 /*
  * find a task by one of its numerical ids
  *
- * find_task_by_pid_type_ns():
- *      it is the most generic call - it finds a task by all id,
- *      type and namespace specified
  * find_task_by_pid_ns():
  *      finds a task by its pid in the specified namespace
  * find_task_by_vpid():
@@ -2005,9 +1997,6 @@ extern struct pid_namespace init_pid_ns;
  *
  * see also find_vpid() etc in include/linux/pid.h
  */
-
-extern struct task_struct *find_task_by_pid_type_ns(int type, int pid,
-		struct pid_namespace *ns);
 
 extern struct task_struct *find_task_by_vpid(pid_t nr);
 extern struct task_struct *find_task_by_pid_ns(pid_t nr,
@@ -2142,7 +2131,8 @@ extern void mm_release(struct task_struct *, struct mm_struct *);
 /* Allocate a new mm structure and copy contents from tsk->mm */
 extern struct mm_struct *dup_mm(struct task_struct *tsk);
 
-extern int  copy_thread(int, unsigned long, unsigned long, unsigned long, struct task_struct *, struct pt_regs *);
+extern int copy_thread(unsigned long, unsigned long, unsigned long,
+			struct task_struct *, struct pt_regs *);
 extern void flush_thread(void);
 extern void exit_thread(void);
 
@@ -2178,12 +2168,13 @@ static inline unsigned long wait_task_inactive(struct task_struct *p,
 }
 #endif
 
-#define next_task(p)	list_entry(rcu_dereference((p)->tasks.next), struct task_struct, tasks)
+#define next_task(p) \
+	list_entry_rcu((p)->tasks.next, struct task_struct, tasks)
 
 #define for_each_process(p) \
 	for (p = &init_task ; (p = next_task(p)) != &init_task ; )
 
-extern bool is_single_threaded(struct task_struct *);
+extern bool current_is_single_threaded(void);
 
 /*
  * Careful: do_each_thread/while_each_thread is a double loop so
@@ -2217,8 +2208,8 @@ int same_thread_group(struct task_struct *p1, struct task_struct *p2)
 
 static inline struct task_struct *next_thread(const struct task_struct *p)
 {
-	return list_entry(rcu_dereference(p->thread_group.next),
-			  struct task_struct, thread_group);
+	return list_entry_rcu(p->thread_group.next,
+			      struct task_struct, thread_group);
 }
 
 static inline int thread_group_empty(struct task_struct *p)

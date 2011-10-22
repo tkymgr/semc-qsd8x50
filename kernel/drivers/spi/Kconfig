@@ -117,10 +117,11 @@ config SPI_GPIO
 	  speed with a custom version of this driver; see the source code.
 
 config SPI_IMX
-	tristate "Freescale iMX SPI controller"
-	depends on ARCH_IMX && EXPERIMENTAL
+	tristate "Freescale i.MX SPI controllers"
+	depends on ARCH_MXC
+	select SPI_BITBANG
 	help
-	  This enables using the Freescale iMX SPI controller in master
+	  This enables using the Freescale i.MX SPI controllers in master
 	  mode.
 
 config SPI_LM70_LLP
@@ -139,27 +140,15 @@ config SPI_MPC52xx_PSC
 	  This enables using the Freescale MPC52xx Programmable Serial
 	  Controller in master SPI mode.
 
-config SPI_MPC83xx
-	tristate "Freescale MPC83xx/QUICC Engine SPI controller"
-	depends on (PPC_83xx || QUICC_ENGINE) && EXPERIMENTAL
+config SPI_MPC8xxx
+	tristate "Freescale MPC8xxx SPI controller"
+	depends on FSL_SOC
 	help
-	  This enables using the Freescale MPC83xx and QUICC Engine SPI
-	  controllers in master mode.
+	  This enables using the Freescale MPC8xxx SPI controllers in master
+	  mode.
 
-	  Note, this driver uniquely supports the SPI controller on the MPC83xx
-	  family of PowerPC processors, plus processors with QUICC Engine
-	  technology. This driver uses a simple set of shift registers for data
-	  (opposed to the CPM based descriptor model).
-
-config SPI_QSD
-	tristate "Qualcomm MSM SPI support"
-	default n
-	depends on ARCH_MSM_SCORPION
-	help
-	  Support for Serial Peripheral Interface for Qualcomm MSM
-
-	  This driver can also be built as a module.  If so, the module
-	  will be called spi_qsd.
+	  This driver uses a simple set of shift registers for data (opposed
+	  to the CPM based descriptor model).
 
 config SPI_OMAP_UWIRE
 	tristate "OMAP1 MicroWire"
@@ -181,6 +170,25 @@ config SPI_ORION
 	help
 	  This enables using the SPI master controller on the Orion chips.
 
+config SPI_PL022
+	tristate "ARM AMBA PL022 SSP controller (EXPERIMENTAL)"
+	depends on ARM_AMBA && EXPERIMENTAL
+	default y if MACH_U300
+	default y if ARCH_REALVIEW
+	default y if INTEGRATOR_IMPD1
+	default y if ARCH_VERSATILE
+	help
+	  This selects the ARM(R) AMBA(R) PrimeCell PL022 SSP
+	  controller. If you have an embedded system with an AMBA(R)
+	  bus and a PL022 controller, say Y or M here.
+
+config SPI_PPC4xx
+	tristate "PPC4xx SPI Controller"
+	depends on PPC32 && 4xx && SPI_MASTER
+	select SPI_BITBANG
+	help
+	  This selects a driver for the PPC4xx SPI Controller.
+
 config SPI_PXA2XX
 	tristate "PXA2xx SSP SPI master"
 	depends on ARCH_PXA && EXPERIMENTAL
@@ -189,6 +197,38 @@ config SPI_PXA2XX
 	  This enables using a PXA2xx SSP port as a SPI master controller.
 	  The driver can be configured to use any SSP port and additional
 	  documentation can be found a Documentation/spi/pxa2xx.
+
+config SPI_QSD
+	tristate "Qualcomm MSM SPI support"
+	default n
+	depends on ARCH_MSM_SCORPION
+	help
+	  Support for Serial Peripheral Interface for Qualcomm MSM
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called spi_qsd.
+
+config SPI_QSD_RTQUEUE
+	bool "Use RT transaction prioritization"
+	default n
+	depends on SPI_QSD
+	help
+	  Select 'Y' to use a realtime workqueue for scheduling SPI
+	  transactions.  This will substantially reduce communications
+	  latency with SPI slaves by preempting all non-realtime user
+	  processes and kernel threads.  This may or may not be what
+	  you want.  If you aren't sure, select 'N'.
+
+config SPI_QUP
+	tristate "Qualcomm MSM SPI QUPe Support"
+	depends on ARCH_MSM8X60 && !SPI_QSD
+	default y
+	help
+	  Support for Serial Peripheral Interface for Qualcomm Universal
+          Peripheral.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called spi_qsd.
 
 config SPI_S3C24XX
 	tristate "Samsung S3C24XX series SPI"
@@ -214,6 +254,12 @@ config SPI_SH_SCI
 	help
 	  SPI driver for SuperH SCI blocks.
 
+config SPI_STMP3XXX
+	tristate "Freescale STMP37xx/378x SPI/SSP controller"
+	depends on ARCH_STMP3XXX && SPI_MASTER
+	help
+	  SPI driver for Freescale STMP37xx/378x SoC SSP interface
+
 config SPI_TXX9
 	tristate "Toshiba TXx9 SPI controller"
 	depends on GENERIC_GPIO && CPU_TX49XX
@@ -222,7 +268,7 @@ config SPI_TXX9
 
 config SPI_XILINX
 	tristate "Xilinx SPI controller"
-	depends on XILINX_VIRTEX && EXPERIMENTAL
+	depends on (XILINX_VIRTEX || MICROBLAZE) && EXPERIMENTAL
 	select SPI_BITBANG
 	help
 	  This exposes the SPI controller IP from the Xilinx EDK.

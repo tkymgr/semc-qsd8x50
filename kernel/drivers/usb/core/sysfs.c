@@ -13,6 +13,7 @@
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/usb.h>
+#include <linux/usb/quirks.h>
 #include "usb.h"
 
 /* Active configuration fields */
@@ -81,15 +82,22 @@ static ssize_t  show_##name(struct device *dev,				\
 		struct device_attribute *attr, char *buf)		\
 {									\
 	struct usb_device *udev;					\
+	int retval;							\
 									\
 	udev = to_usb_device(dev);					\
-	return sprintf(buf, "%s\n", udev->name);			\
+	usb_lock_device(udev);						\
+	retval = sprintf(buf, "%s\n", udev->name);			\
+	usb_unlock_device(udev);					\
+	return retval;							\
 }									\
 static DEVICE_ATTR(name, S_IRUGO, show_##name, NULL);
 
 usb_string_attr(product);
 usb_string_attr(manufacturer);
 usb_string_attr(serial);
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+usb_string_attr(otg_dev_info);
+#endif
 
 static ssize_t
 show_speed(struct device *dev, struct device_attribute *attr, char *buf)
@@ -109,6 +117,12 @@ show_speed(struct device *dev, struct device_attribute *attr, char *buf)
 		break;
 	case USB_SPEED_HIGH:
 		speed = "480";
+		break;
+	case USB_SPEED_VARIABLE:
+		speed = "480";
+		break;
+	case USB_SPEED_SUPER:
+		speed = "5000";
 		break;
 	default:
 		speed = "unknown";
@@ -527,6 +541,9 @@ static struct attribute *dev_attrs[] = {
 	&dev_attr_bMaxPacketSize0.attr,
 	&dev_attr_speed.attr,
 	&dev_attr_busnum.attr,
+#ifdef CONFIG_USB_OTG_NOTIFICATION
+	&dev_attr_otg_dev_info.attr,
+#endif
 	&dev_attr_devnum.attr,
 	&dev_attr_version.attr,
 	&dev_attr_maxchild.attr,
@@ -551,8 +568,8 @@ static struct attribute *dev_string_attrs[] = {
 static mode_t dev_string_attrs_are_visible(struct kobject *kobj,
 		struct attribute *a, int n)
 {
-	struct usb_device *udev = to_usb_device(
-			container_of(kobj, struct device, kobj));
+	struct device *dev = container_of(kobj, struct device, kobj);
+	struct usb_device *udev = to_usb_device(dev);
 
 	if (a == &dev_attr_manufacturer.attr) {
 		if (udev->manufacturer == NULL)
@@ -572,7 +589,7 @@ static struct attribute_group dev_string_attr_grp = {
 	.is_visible =	dev_string_attrs_are_visible,
 };
 
-struct attribute_group *usb_device_groups[] = {
+const struct attribute_group *usb_device_groups[] = {
 	&dev_attr_grp,
 	&dev_string_attr_grp,
 	NULL
@@ -584,8 +601,8 @@ static ssize_t
 read_descriptors(struct kobject *kobj, struct bin_attribute *attr,
 		char *buf, loff_t off, size_t count)
 {
-	struct usb_device *udev = to_usb_device(
-			container_of(kobj, struct device, kobj));
+	struct device *dev = container_of(kobj, struct device, kobj);
+	struct usb_device *udev = to_usb_device(dev);
 	size_t nleft = count;
 	size_t srclen, n;
 	int cfgno;
@@ -785,8 +802,8 @@ static struct attribute *intf_assoc_attrs[] = {
 static mode_t intf_assoc_attrs_are_visible(struct kobject *kobj,
 		struct attribute *a, int n)
 {
-	struct usb_interface *intf = to_usb_interface(
-			container_of(kobj, struct device, kobj));
+	struct device *dev = container_of(kobj, struct device, kobj);
+	struct usb_interface *intf = to_usb_interface(dev);
 
 	if (intf->intf_assoc == NULL)
 		return 0;
@@ -798,7 +815,7 @@ static struct attribute_group intf_assoc_attr_grp = {
 	.is_visible =	intf_assoc_attrs_are_visible,
 };
 
-struct attribute_group *usb_interface_groups[] = {
+const struct attribute_group *usb_interface_groups[] = {
 	&intf_attr_grp,
 	&intf_assoc_attr_grp,
 	NULL
@@ -813,7 +830,8 @@ int usb_create_sysfs_intf_files(struct usb_interface *intf)
 	if (intf->sysfs_files_created || intf->unregistering)
 		return 0;
 
-	if (alt->string == NULL)
+	if (alt->string == NULL &&
+			!(udev->quirks & USB_QUIRK_CONFIG_INTF_STRINGS))
 		alt->string = usb_cache_string(udev, alt->desc.iInterface);
 	if (alt->string)
 		retval = device_create_file(&intf->dev, &dev_attr_interface);

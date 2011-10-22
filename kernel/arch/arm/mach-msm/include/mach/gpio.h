@@ -1,7 +1,6 @@
-/* linux/include/asm-arm/arch-msm/gpio.h
- *
+/*
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2009-2010, Code Aurora Forum. All rights reserved.
  * Author: Mike Lockwood <lockwood@android.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -14,11 +13,38 @@
  * GNU General Public License for more details.
  *
  */
-
 #ifndef __ASM_ARCH_MSM_GPIO_H
 #define __ASM_ARCH_MSM_GPIO_H
 
+#ifdef CONFIG_ARCH_MSM8X60
+#define ARCH_NR_GPIOS 512
+#endif
+
 #include <linux/interrupt.h>
+#include <asm-generic/gpio.h>
+#include <mach/irqs.h>
+
+#define FIRST_BOARD_GPIO	NR_GPIO_IRQS
+
+static inline int gpio_get_value(unsigned gpio)
+{
+	return __gpio_get_value(gpio);
+}
+
+static inline void gpio_set_value(unsigned gpio, int value)
+{
+	__gpio_set_value(gpio, value);
+}
+
+static inline int gpio_cansleep(unsigned gpio)
+{
+	return __gpio_cansleep(gpio);
+}
+
+static inline int gpio_to_irq(unsigned gpio)
+{
+	return __gpio_to_irq(gpio);
+}
 
 /**
  * struct msm_gpio - GPIO pin description
@@ -88,32 +114,7 @@ int msm_gpios_enable(const struct msm_gpio *table, int size);
  * @table: GPIO table
  * @size:  number of entries in @table
  */
-void msm_gpios_disable(const struct msm_gpio *table, int size);
-
-int gpio_request(unsigned gpio, const char *label);
-void gpio_free(unsigned gpio);
-int gpio_direction_input(unsigned gpio);
-int gpio_direction_output(unsigned gpio, int value);
-int gpio_get_value(unsigned gpio);
-void gpio_set_value(unsigned gpio, int value);
-int gpio_to_irq(unsigned gpio);
-
-#include <asm-generic/gpio.h>
-
-/* extended gpio api */
-
-#define GPIOF_IRQF_MASK         0x0000ffff /* use to specify edge detection without */
-#define GPIOF_IRQF_TRIGGER_NONE 0x00010000 /* IRQF_TRIGGER_NONE is 0 which also means "as already configured" */
-#define GPIOF_INPUT             0x00020000
-#define GPIOF_DRIVE_OUTPUT      0x00040000
-#define GPIOF_OUTPUT_LOW        0x00080000
-#define GPIOF_OUTPUT_HIGH       0x00100000
-
-#define GPIOIRQF_SHARED         0x00000001 /* the irq line is shared with other inputs */
-
-extern int gpio_configure(unsigned int gpio, unsigned long flags);
-extern int gpio_read_detect_status(unsigned int gpio);
-extern int gpio_clear_detect_status(unsigned int gpio);
+int msm_gpios_disable(const struct msm_gpio *table, int size);
 
 /* GPIO TLMM (Top Level Multiplexing) Definitions */
 

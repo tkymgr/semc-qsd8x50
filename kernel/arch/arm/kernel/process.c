@@ -100,7 +100,7 @@ void arm_machine_restart(char mode, const char *cmd)
 	/*
 	 * Now call the architecture specific reboot code.
 	 */
-	arch_reset(mode);
+	arch_reset(mode, cmd);
 
 	/*
 	 * Whoops - the architecture was unable to reboot.
@@ -391,7 +391,7 @@ void release_thread(struct task_struct *dead_task)
 asmlinkage void ret_from_fork(void) __asm__("ret_from_fork");
 
 int
-copy_thread(int nr, unsigned long clone_flags, unsigned long stack_start,
+copy_thread(unsigned long clone_flags, unsigned long stack_start,
 	    unsigned long stk_sz, struct task_struct *p, struct pt_regs *regs)
 {
 	struct thread_info *thread = task_thread_info(p);
@@ -479,9 +479,9 @@ pid_t kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 
 	regs.ARM_r1 = (unsigned long)arg;
 	regs.ARM_r2 = (unsigned long)fn;
-	regs.ARM_r3 = (unsigned long)do_exit;
+	regs.ARM_r3 = (unsigned long)kernel_thread_exit;
 	regs.ARM_pc = (unsigned long)kernel_thread_helper;
-	regs.ARM_cpsr = SVC_MODE;
+	regs.ARM_cpsr = SVC_MODE | PSR_ENDSTATE | PSR_ISETSTATE;
 
 	return do_fork(flags|CLONE_VM|CLONE_UNTRACED, 0, &regs, 0, NULL, NULL);
 }

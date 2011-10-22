@@ -1,62 +1,24 @@
-/**
- * TSIF driver
+/*
+ * TSIF Driver
  *
- * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2009-2010, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2010 Sony Ericsson Mobile Communications AB
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Code Aurora Forum nor
- *       the names of its contributors may be used to endorse or promote
- *       products derived from this software without specific prior written
- *       permission.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
  *
- * Alternatively, provided that this notice is retained in full, this software
- * may be relicensed by the recipient under the terms of the GNU General Public
- * License version 2 ("GPL") and only version 2, in which case the provisions of
- * the GPL apply INSTEAD OF those given above.  If the recipient relicenses the
- * software under the GPL, then the identification text in the MODULE_LICENSE
- * macro must be changed to reflect "GPLv2" instead of "Dual BSD/GPL".  Once a
- * recipient changes the license terms to the GPL, subsequent recipients shall
- * not relicense under alternate licensing terms, including the BSD or dual
- * BSD/GPL terms.  In addition, the following license statement immediately
- * below and between the words START and END shall also then apply when this
- * software is relicensed under the GPL:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * START
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 and only version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- * details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * END
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
  */
-
 #include <linux/module.h>       /* Needed by all modules */
 #include <linux/kernel.h>       /* Needed for KERN_INFO */
 #include <linux/init.h>         /* Needed for the macros */
@@ -73,19 +35,15 @@
 #include <linux/clk.h>
 #include <linux/wakelock.h>
 #include <linux/tsif_api.h>
+#include <linux/pm_runtime.h>
+#include <linux/slab.h>          /* kfree, kzalloc */
+
+#include <linux/pm_runtime.h>
+#include <linux/slab.h>         /* kfree, kzalloc */
 
 #include <mach/gpio.h>
 #include <mach/dma.h>
 #include <mach/msm_tsif.h>
-
-/**
- * WORKAROUND_TCR - enable work around for TCR counter
- *
- * tcif_ref_clk have output from TV clock control unit, for this output to work,
- * M/N divider in TV controlling unit should be ON. Modem software do not turn
- * it on unless some TV clock requested. As work around, I turn on tv_enc_clk.
- */
-#define WORKAROUND_TCR
 
 /*
  * TSIF register offsets
@@ -195,10 +153,8 @@ struct msm_tsif_device {
 	struct wake_lock wake_lock;
 	/* clocks */
 	struct clk *tsif_clk;
+	struct clk *tsif_pclk;
 	struct clk *tsif_ref_clk;
-#ifdef WORKAROUND_TCR
-	struct clk *tv_enc_clk;
-#endif /*WORKAROUND_TCR*/
 	/* debugfs */
 	struct dentry *dent_tsif;
 	struct dentry *debugfs_tsif_regs[ARRAY_SIZE(debugfs_tsif_regs)];
@@ -243,45 +199,53 @@ static void tsif_put_clocks(struct msm_tsif_device *tsif_device)
 		clk_put(tsif_device->tsif_clk);
 		tsif_device->tsif_clk = NULL;
 	}
+	if (tsif_device->tsif_pclk) {
+		clk_put(tsif_device->tsif_pclk);
+		tsif_device->tsif_pclk = NULL;
+	}
+
 	if (tsif_device->tsif_ref_clk) {
 		clk_put(tsif_device->tsif_ref_clk);
 		tsif_device->tsif_ref_clk = NULL;
 	}
-#ifdef WORKAROUND_TCR
-	if (tsif_device->tv_enc_clk) {
-		clk_put(tsif_device->tv_enc_clk);
-		tsif_device->tv_enc_clk = NULL;
-	}
-#endif /*WORKAROUND_TCR*/
 }
 
 static int tsif_get_clocks(struct msm_tsif_device *tsif_device)
 {
+	struct msm_tsif_platform_data *pdata =
+		tsif_device->pdev->dev.platform_data;
 	int rc = 0;
-	tsif_device->tsif_clk = clk_get(NULL, "tsif_clk");
-	if (IS_ERR(tsif_device->tsif_clk)) {
-		dev_err(&tsif_device->pdev->dev, "failed to get tsif_clk\n");
-		rc = PTR_ERR(tsif_device->tsif_clk);
-		tsif_device->tsif_clk = NULL;
-		goto ret;
+
+	if (pdata->tsif_clk) {
+		tsif_device->tsif_clk = clk_get(NULL, pdata->tsif_clk);
+		if (IS_ERR(tsif_device->tsif_clk)) {
+			dev_err(&tsif_device->pdev->dev, "failed to get %s\n",
+				pdata->tsif_clk);
+			rc = PTR_ERR(tsif_device->tsif_clk);
+			tsif_device->tsif_clk = NULL;
+			goto ret;
+		}
 	}
-	tsif_device->tsif_ref_clk = clk_get(NULL, "tsif_ref_clk");
-	if (IS_ERR(tsif_device->tsif_ref_clk)) {
-		dev_err(&tsif_device->pdev->dev,
-			"failed to get tsif_ref_clk\n");
-		rc = PTR_ERR(tsif_device->tsif_ref_clk);
-		tsif_device->tsif_ref_clk = NULL;
-		goto ret;
+	if (pdata->tsif_pclk) {
+		tsif_device->tsif_pclk = clk_get(NULL, pdata->tsif_pclk);
+		if (IS_ERR(tsif_device->tsif_pclk)) {
+			dev_err(&tsif_device->pdev->dev, "failed to get %s\n",
+				pdata->tsif_pclk);
+			rc = PTR_ERR(tsif_device->tsif_pclk);
+			tsif_device->tsif_pclk = NULL;
+			goto ret;
+		}
 	}
-#ifdef WORKAROUND_TCR
-	tsif_device->tv_enc_clk = clk_get(NULL, "tv_enc_clk");
-	if (IS_ERR(tsif_device->tv_enc_clk)) {
-		dev_err(&tsif_device->pdev->dev, "failed to get tv_enc_clk\n");
-		rc = PTR_ERR(tsif_device->tv_enc_clk);
-		tsif_device->tv_enc_clk = NULL;
-		goto ret;
+	if (pdata->tsif_ref_clk) {
+		tsif_device->tsif_ref_clk = clk_get(NULL, pdata->tsif_ref_clk);
+		if (IS_ERR(tsif_device->tsif_ref_clk)) {
+			dev_err(&tsif_device->pdev->dev, "failed to get %s\n",
+				pdata->tsif_ref_clk);
+			rc = PTR_ERR(tsif_device->tsif_ref_clk);
+			tsif_device->tsif_ref_clk = NULL;
+			goto ret;
+		}
 	}
-#endif /*WORKAROUND_TCR*/
 	return 0;
 ret:
 	tsif_put_clocks(tsif_device);
@@ -291,34 +255,131 @@ ret:
 static void tsif_clock(struct msm_tsif_device *tsif_device, int on)
 {
 	if (on) {
-#ifdef WORKAROUND_TCR
-		clk_enable(tsif_device->tv_enc_clk);
-#endif /*WORKAROUND_TCR*/
-		clk_enable(tsif_device->tsif_clk);
+		if (tsif_device->tsif_clk)
+			clk_enable(tsif_device->tsif_clk);
+		if (tsif_device->tsif_pclk)
+			clk_enable(tsif_device->tsif_pclk);
 		clk_enable(tsif_device->tsif_ref_clk);
 	} else {
-		clk_disable(tsif_device->tsif_clk);
+		if (tsif_device->tsif_clk)
+			clk_disable(tsif_device->tsif_clk);
+		if (tsif_device->tsif_pclk)
+			clk_disable(tsif_device->tsif_pclk);
 		clk_disable(tsif_device->tsif_ref_clk);
-#ifdef WORKAROUND_TCR
-		clk_disable(tsif_device->tv_enc_clk);
-#endif /*WORKAROUND_TCR*/
 	}
 }
 /* ===clocks end=== */
 /* ===gpio begin=== */
 
+static void tsif_gpios_free(const struct msm_gpio *table, int size)
+{
+	int i;
+	const struct msm_gpio *g;
+	for (i = size-1; i >= 0; i--) {
+		g = table + i;
+		gpio_free(GPIO_PIN(g->gpio_cfg));
+	}
+}
+
+static int tsif_gpios_request(const struct msm_gpio *table, int size)
+{
+	int rc;
+	int i;
+	const struct msm_gpio *g;
+	for (i = 0; i < size; i++) {
+		g = table + i;
+		rc = gpio_request(GPIO_PIN(g->gpio_cfg), g->label);
+		if (rc) {
+			pr_err("gpio_request(%d) <%s> failed: %d\n",
+			       GPIO_PIN(g->gpio_cfg), g->label ?: "?", rc);
+			goto err;
+		}
+	}
+	return 0;
+err:
+	tsif_gpios_free(table, i);
+	return rc;
+}
+
+static int tsif_gpios_disable(const struct msm_gpio *table, int size)
+{
+	int rc = 0;
+	int i;
+	const struct msm_gpio *g;
+	for (i = size-1; i >= 0; i--) {
+		int tmp;
+		g = table + i;
+		tmp = gpio_tlmm_config(g->gpio_cfg, GPIO_CFG_DISABLE);
+		if (tmp) {
+			pr_err("gpio_tlmm_config(0x%08x, GPIO_CFG_DISABLE)"
+			       " <%s> failed: %d\n",
+			       g->gpio_cfg, g->label ?: "?", rc);
+			pr_err("pin %d func %d dir %d pull %d drvstr %d\n",
+			       GPIO_PIN(g->gpio_cfg), GPIO_FUNC(g->gpio_cfg),
+			       GPIO_DIR(g->gpio_cfg), GPIO_PULL(g->gpio_cfg),
+			       GPIO_DRVSTR(g->gpio_cfg));
+			if (!rc)
+				rc = tmp;
+		}
+	}
+
+	return rc;
+}
+
+static int tsif_gpios_enable(const struct msm_gpio *table, int size)
+{
+	int rc;
+	int i;
+	const struct msm_gpio *g;
+	for (i = 0; i < size; i++) {
+		g = table + i;
+		rc = gpio_tlmm_config(g->gpio_cfg, GPIO_CFG_ENABLE);
+		if (rc) {
+			pr_err("gpio_tlmm_config(0x%08x, GPIO_CFG_ENABLE)"
+			       " <%s> failed: %d\n",
+			       g->gpio_cfg, g->label ?: "?", rc);
+			pr_err("pin %d func %d dir %d pull %d drvstr %d\n",
+			       GPIO_PIN(g->gpio_cfg), GPIO_FUNC(g->gpio_cfg),
+			       GPIO_DIR(g->gpio_cfg), GPIO_PULL(g->gpio_cfg),
+			       GPIO_DRVSTR(g->gpio_cfg));
+			goto err;
+		}
+	}
+	return 0;
+err:
+	tsif_gpios_disable(table, i);
+	return rc;
+}
+
+static int tsif_gpios_request_enable(const struct msm_gpio *table, int size)
+{
+	int rc = tsif_gpios_request(table, size);
+	if (rc)
+		return rc;
+	rc = tsif_gpios_enable(table, size);
+	if (rc)
+		tsif_gpios_free(table, size);
+	return rc;
+}
+
+static void tsif_gpios_disable_free(const struct msm_gpio *table, int size)
+{
+	tsif_gpios_disable(table, size);
+	tsif_gpios_free(table, size);
+}
+
 static int tsif_start_gpios(struct msm_tsif_device *tsif_device)
 {
 	struct msm_tsif_platform_data *pdata =
 		tsif_device->pdev->dev.platform_data;
-	return msm_gpios_request_enable(pdata->gpios, pdata->num_gpios);
+	return tsif_gpios_request_enable(pdata->gpios, pdata->num_gpios);
 }
 
 static void tsif_stop_gpios(struct msm_tsif_device *tsif_device)
 {
 	struct msm_tsif_platform_data *pdata =
 		tsif_device->pdev->dev.platform_data;
-	msm_gpios_disable_free(pdata->gpios, pdata->num_gpios);
+	tsif_gpios_disable_free(pdata->gpios, pdata->num_gpios);
 }
 
 /* ===gpio end=== */
@@ -338,7 +399,6 @@ static int tsif_start_hw(struct msm_tsif_device *tsif_device)
 		ctl |= (1 << 5);
 		break;
 	case 3: /* manual - control from debugfs */
-		/* ctl |= (2 << 5); */
 		return 0;
 		break;
 	default:
@@ -442,7 +502,7 @@ static void tsif_dma_schedule(struct msm_tsif_device *tsif_device)
 				 "Overflow detected\n");
 		}
 		xfer->wi = tsif_device->dmwi;
-#if 0
+#ifdef CONFIG_TSIF_DEBUG
 		dev_info(&tsif_device->pdev->dev,
 			"schedule xfer[%d] -> [%2d]{%2d}\n",
 			i, dmwi0, xfer->wi);
@@ -503,7 +563,8 @@ static void tsif_dmov_complete_func(struct msm_dmov_cmd *cmd,
 		if (w == xfer->wi)
 			tsif_device->stat_soft_drop++;
 		reschedule = (tsif_device->state == tsif_state_running);
-#if 1 /* IFI calculation */
+#ifdef CONFIG_TSIF_DEBUG
+		/* IFI calculation */
 		/*
 		 * update stat_ifi (inter frame interval)
 		 *
@@ -735,8 +796,10 @@ static irqreturn_t tsif_irq(int irq, void *dev_id)
 		dev_info(&tsif_device->pdev->dev, "TSIF IRQ: OVERFLOW\n");
 		tsif_device->stat_overflow++;
 	}
-	if (sts_ctl & TSIF_STS_CTL_LOST_SYNC)
+	if (sts_ctl & TSIF_STS_CTL_LOST_SYNC) {
+		dev_info(&tsif_device->pdev->dev, "TSIF IRQ: LOST SYNC\n");
 		tsif_device->stat_lost_sync++;
+	}
 	if (sts_ctl & TSIF_STS_CTL_TIMEOUT) {
 		dev_info(&tsif_device->pdev->dev, "TSIF IRQ: TIMEOUT\n");
 		tsif_device->stat_timeout++;
@@ -960,6 +1023,8 @@ struct dentry *debugfs_create_iomem_x32(const char *name, mode_t mode,
 static int action_open(struct msm_tsif_device *tsif_device)
 {
 	int rc = -EINVAL;
+	int result;
+
 	dev_info(&tsif_device->pdev->dev, "%s\n", __func__);
 	if (tsif_device->state != tsif_state_stopped)
 		return -EAGAIN;
@@ -973,13 +1038,25 @@ static int action_open(struct msm_tsif_device *tsif_device)
 	 * DMA should be scheduled prior to TSIF hardware initialization,
 	 * otherwise "bus error" will be reported by Data Mover
 	 */
-	tsif_dma_schedule(tsif_device);
+	enable_irq(tsif_device->irq);
 	tsif_clock(tsif_device, 1);
+	tsif_dma_schedule(tsif_device);
 	rc = tsif_start_hw(tsif_device);
 	if (rc) {
+		dev_err(&tsif_device->pdev->dev, "Unable to start HW\n");
 		tsif_dma_exit(tsif_device);
+		tsif_clock(tsif_device, 0);
 		return rc;
 	}
+
+	result = pm_runtime_get(&tsif_device->pdev->dev);
+	if (result < 0) {
+		dev_err(&tsif_device->pdev->dev,
+			"Runtime PM: Unable to wake up the device, rc = %d\n",
+			result);
+		return result;
+	}
+
 	wake_lock(&tsif_device->wake_lock);
 	return rc;
 }
@@ -992,9 +1069,12 @@ static int action_close(struct msm_tsif_device *tsif_device)
 	 * DMA should be flushed/stopped prior to TSIF hardware stop,
 	 * otherwise "bus error" will be reported by Data Mover
 	 */
-	tsif_dma_exit(tsif_device);
 	tsif_stop_hw(tsif_device);
+	tsif_dma_exit(tsif_device);
 	tsif_clock(tsif_device, 0);
+	disable_irq(tsif_device->irq);
+
+	pm_runtime_put(&tsif_device->pdev->dev);
 	wake_unlock(&tsif_device->wake_lock);
 	return 0;
 }
@@ -1227,19 +1307,6 @@ static int __init msm_tsif_probe(struct platform_device *pdev)
 	}
 	tsif_device->dma = res->start;
 	tsif_device->crci = res->end;
-	/**
-	 * Memory and I/O resources get requested at platform device
-	 * registration through this chain:
-	 * platform_add_devices -> platform_device_register ->
-	 * platform_device_add
-	 */
-#if 0
-	rc = request_resource(&iomem_resource, tsif_device->memres);
-	if (rc) {
-		pr_err("request_resource failed: %d\n", rc);
-		goto err_rgn;
-	}
-#endif
 	tsif_device->base = ioremap(tsif_device->memres->start,
 				    resource_size(tsif_device->memres));
 	if (!tsif_device->base) {
@@ -1248,14 +1315,20 @@ static int __init msm_tsif_probe(struct platform_device *pdev)
 	}
 	dev_info(&pdev->dev, "remapped phys 0x%08x => virt %p\n",
 		 tsif_device->memres->start, tsif_device->base);
-/*TODO: handle errors*/
-	tsif_start_gpios(tsif_device);
+	rc = tsif_start_gpios(tsif_device);
+	if (rc)
+		goto err_gpio;
+
+	pm_runtime_set_active(&pdev->dev);
+	pm_runtime_enable(&pdev->dev);
+
 	tsif_debugfs_init(tsif_device);
 	rc = platform_get_irq(pdev, 0);
 	if (rc > 0) {
 		tsif_device->irq = rc;
 		rc = request_irq(tsif_device->irq, tsif_irq, IRQF_SHARED,
 				 dev_name(&pdev->dev), tsif_device);
+		disable_irq(tsif_device->irq);
 	}
 	if (rc) {
 		dev_err(&pdev->dev, "failed to request IRQ %d : %d\n",
@@ -1275,17 +1348,15 @@ static int __init msm_tsif_probe(struct platform_device *pdev)
 	list_add(&tsif_device->devlist, &tsif_devices);
 	return 0;
 /* error path */
-#if 0   /* unrechable code, uncomment if more init steps added */
 	sysfs_remove_group(&pdev->dev.kobj, &dev_attr_grp);
-#endif
 err_attrs:
 	free_irq(tsif_device->irq, tsif_device);
 err_irq:
 	tsif_debugfs_exit(tsif_device);
 	tsif_stop_gpios(tsif_device);
+err_gpio:
 	iounmap(tsif_device->base);
 err_ioremap:
-	/*release_resource(tsif_device->memres);*/
 err_rgn:
 	tsif_put_clocks(tsif_device);
 err_clocks:
@@ -1306,21 +1377,38 @@ static int __devexit msm_tsif_remove(struct platform_device *pdev)
 	tsif_dma_exit(tsif_device);
 	tsif_stop_gpios(tsif_device);
 	iounmap(tsif_device->base);
-	/*release_resource(tsif_device->memres);*/
 	tsif_put_clocks(tsif_device);
+
+	pm_runtime_put(&pdev->dev);
+	pm_runtime_disable(&pdev->dev);
 	kfree(tsif_device);
 	return 0;
 }
 
+static int tsif_runtime_suspend(struct device *dev)
+{
+	dev_dbg(dev, "pm_runtime: suspending...\n");
+	return 0;
+}
+
+static int tsif_runtime_resume(struct device *dev)
+{
+	dev_dbg(dev, "pm_runtime: resuming...\n");
+	return 0;
+}
+
+static const struct dev_pm_ops tsif_dev_pm_ops = {
+	.runtime_suspend = tsif_runtime_suspend,
+	.runtime_resume = tsif_runtime_resume,
+};
+
+
 static struct platform_driver msm_tsif_driver = {
 	.probe          = msm_tsif_probe,
-	.remove         = __devexit_p(msm_tsif_remove),
-#if 0
-	.suspend      = msm_tsif_suspend,
-	.resume       = msm_tsif_resume,
-#endif
+	.remove         = __exit_p(msm_tsif_remove),
 	.driver         = {
 		.name   = "msm_tsif",
+		.pm     = &tsif_dev_pm_ops,
 	},
 };
 
@@ -1474,5 +1562,5 @@ module_exit(mod_exit);
 
 MODULE_DESCRIPTION("TSIF (Transport Stream Interface)"
 		   " Driver for the MSM chipset");
-MODULE_LICENSE("Dual BSD/GPL");
+MODULE_LICENSE("GPL v2");
 

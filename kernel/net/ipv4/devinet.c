@@ -1082,9 +1082,27 @@ static int inetdev_event(struct notifier_block *this, unsigned long event,
 			}
 		}
 		ip_mc_up(in_dev);
+		/* fall through */
+	case NETDEV_CHANGEADDR:
+		/* Send gratuitous ARP to notify of link change */
+		if (IN_DEV_ARP_NOTIFY(in_dev)) {
+			struct in_ifaddr *ifa = in_dev->ifa_list;
+
+			if (ifa)
+				arp_send(ARPOP_REQUEST, ETH_P_ARP,
+					 ifa->ifa_address, dev,
+					 ifa->ifa_address, NULL,
+					 dev->dev_addr, NULL);
+		}
 		break;
 	case NETDEV_DOWN:
 		ip_mc_down(in_dev);
+		break;
+	case NETDEV_BONDING_OLDTYPE:
+		ip_mc_unmap(in_dev);
+		break;
+	case NETDEV_BONDING_NEWTYPE:
+		ip_mc_remap(in_dev);
 		break;
 	case NETDEV_CHANGEMTU:
 		if (inetdev_valid_mtu(dev->mtu))
@@ -1215,7 +1233,8 @@ static void rtmsg_ifa(int event, struct in_ifaddr *ifa, struct nlmsghdr *nlh,
 		kfree_skb(skb);
 		goto errout;
 	}
-	err = rtnl_notify(skb, net, pid, RTNLGRP_IPV4_IFADDR, nlh, GFP_KERNEL);
+	rtnl_notify(skb, net, pid, RTNLGRP_IPV4_IFADDR, nlh, GFP_KERNEL);
+	return;
 errout:
 	if (err < 0)
 		rtnl_set_sk_err(net, RTNLGRP_IPV4_IFADDR, err);
@@ -1262,10 +1281,10 @@ static void inet_forward_change(struct net *net)
 }
 
 static int devinet_conf_proc(ctl_table *ctl, int write,
-			     struct file *filp, void __user *buffer,
+			     void __user *buffer,
 			     size_t *lenp, loff_t *ppos)
 {
-	int ret = proc_dointvec(ctl, write, filp, buffer, lenp, ppos);
+	int ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
 
 	if (write) {
 		struct ipv4_devconf *cnf = ctl->extra1;
@@ -1334,18 +1353,19 @@ static int devinet_conf_sysctl(ctl_table *table,
 }
 
 static int devinet_sysctl_forward(ctl_table *ctl, int write,
-				  struct file *filp, void __user *buffer,
+				  void __user *buffer,
 				  size_t *lenp, loff_t *ppos)
 {
 	int *valp = ctl->data;
 	int val = *valp;
-	int ret = proc_dointvec(ctl, write, filp, buffer, lenp, ppos);
+	int ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
 
 	if (write && *valp != val) {
 		struct net *net = ctl->extra2;
 
 		if (valp != &IPV4_DEVCONF_DFLT(net, FORWARDING)) {
-			rtnl_lock();
+			if (!rtnl_trylock())
+				return restart_syscall();
 			if (valp == &IPV4_DEVCONF_ALL(net, FORWARDING)) {
 				inet_forward_change(net);
 			} else if (*valp) {
@@ -1363,12 +1383,12 @@ static int devinet_sysctl_forward(ctl_table *ctl, int write,
 }
 
 int ipv4_doint_and_flush(ctl_table *ctl, int write,
-			 struct file *filp, void __user *buffer,
+			 void __user *buffer,
 			 size_t *lenp, loff_t *ppos)
 {
 	int *valp = ctl->data;
 	int val = *valp;
-	int ret = proc_dointvec(ctl, write, filp, buffer, lenp, ppos);
+	int ret = proc_dointvec(ctl, write, buffer, lenp, ppos);
 	struct net *net = ctl->extra2;
 
 	if (write && *valp != val)
@@ -1437,6 +1457,7 @@ static struct devinet_sysctl_table {
 		DEVINET_SYSCTL_RW_ENTRY(SEND_REDIRECTS, "send_redirects"),
 		DEVINET_SYSCTL_RW_ENTRY(ACCEPT_SOURCE_ROUTE,
 					"accept_source_route"),
+		DEVINET_SYSCTL_RW_ENTRY(SRC_VMARK, "src_valid_mark"),
 		DEVINET_SYSCTL_RW_ENTRY(PROXY_ARP, "proxy_arp"),
 		DEVINET_SYSCTL_RW_ENTRY(MEDIUM_ID, "medium_id"),
 		DEVINET_SYSCTL_RW_ENTRY(BOOTP_RELAY, "bootp_relay"),
@@ -1446,6 +1467,7 @@ static struct devinet_sysctl_table {
 		DEVINET_SYSCTL_RW_ENTRY(ARP_ANNOUNCE, "arp_announce"),
 		DEVINET_SYSCTL_RW_ENTRY(ARP_IGNORE, "arp_ignore"),
 		DEVINET_SYSCTL_RW_ENTRY(ARP_ACCEPT, "arp_accept"),
+		DEVINET_SYSCTL_RW_ENTRY(ARP_NOTIFY, "arp_notify"),
 
 		DEVINET_SYSCTL_FLUSHING_ENTRY(NOXFRM, "disable_xfrm"),
 		DEVINET_SYSCTL_FLUSHING_ENTRY(NOPOLICY, "disable_policy"),

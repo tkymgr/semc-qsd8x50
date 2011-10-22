@@ -17,7 +17,12 @@
 #ifndef __arch_page_to_dma
 static inline dma_addr_t page_to_dma(struct device *dev, struct page *page)
 {
-	return (dma_addr_t)__virt_to_bus((unsigned long)page_address(page));
+	return (dma_addr_t)__pfn_to_bus(page_to_pfn(page));
+}
+
+static inline struct page *dma_to_page(struct device *dev, dma_addr_t addr)
+{
+	return pfn_to_page(__bus_to_pfn(addr));
 }
 
 static inline void *dma_to_virt(struct device *dev, dma_addr_t addr)
@@ -33,6 +38,11 @@ static inline dma_addr_t virt_to_dma(struct device *dev, void *addr)
 static inline dma_addr_t page_to_dma(struct device *dev, struct page *page)
 {
 	return __arch_page_to_dma(dev, page);
+}
+
+static inline struct page *dma_to_page(struct device *dev, dma_addr_t addr)
+{
+	return __arch_dma_to_page(dev, addr);
 }
 
 static inline void *dma_to_virt(struct device *dev, dma_addr_t addr)
@@ -57,6 +67,8 @@ static inline dma_addr_t virt_to_dma(struct device *dev, void *addr)
  * Use the driver DMA support - see dma-mapping.h (dma_sync_*)
  */
 extern void dma_cache_maint(const void *kaddr, size_t size, int rw);
+extern void dma_cache_maint_page(struct page *page, unsigned long offset,
+				 size_t size, int rw);
 
 /*
  * Return whether the given device DMA address mask can be supported
@@ -401,7 +413,7 @@ static inline dma_addr_t dma_map_page(struct device *dev, struct page *page,
 	BUG_ON(!valid_dma_direction(dir));
 
 	if (!arch_is_coherent())
-		dma_cache_maint(page_address(page) + offset, size, dir);
+		dma_cache_maint_page(page, offset, size, dir);
 
 	return page_to_dma(dev, page) + offset;
 }
@@ -425,14 +437,10 @@ static inline void dma_unmap_single(struct device *dev, dma_addr_t handle,
 {
 	BUG_ON(!valid_dma_direction(dir));
 
-	if (arch_has_speculative_dfetch() && !arch_is_coherent()
-	 && dir != DMA_TO_DEVICE)
-		/*
-		 * Treat DMA_BIDIRECTIONAL and DMA_FROM_DEVICE
-		 * identically: invalidate
-		 */
-		dma_cache_maint(dma_to_virt(dev, handle),
-				size, DMA_FROM_DEVICE);
+	if (arch_has_speculative_dfetch() && !arch_is_coherent() &&
+	    dir != DMA_TO_DEVICE)
+		dma_cache_maint(dma_to_virt(dev, handle), size,
+				DMA_FROM_DEVICE);
 }
 #endif /* CONFIG_DMABOUNCE */
 
@@ -453,7 +461,13 @@ static inline void dma_unmap_single(struct device *dev, dma_addr_t handle,
 static inline void dma_unmap_page(struct device *dev, dma_addr_t handle,
 		size_t size, enum dma_data_direction dir)
 {
-	dma_unmap_single(dev, handle, size, dir);
+	BUG_ON(!valid_dma_direction(dir));
+
+	if (arch_has_speculative_dfetch() && !arch_is_coherent() &&
+	    dir != DMA_TO_DEVICE)
+		dma_cache_maint_page(dma_to_page(dev, handle),
+				     handle & ~PAGE_MASK, size,
+				     DMA_FROM_DEVICE);
 }
 
 /**
@@ -484,13 +498,9 @@ static inline void dma_sync_single_range_for_cpu(struct device *dev,
 		return;
 
 	if (arch_has_speculative_dfetch() && !arch_is_coherent()
-	 && dir != DMA_TO_DEVICE)
-		/*
-		 * Treat DMA_BIDIRECTIONAL and DMA_FROM_DEVICE
-		 * identically: invalidate
-		 */
-		dma_cache_maint(dma_to_virt(dev, handle) + offset,
-				size, DMA_FROM_DEVICE);
+	    && dir != DMA_TO_DEVICE)
+		dma_cache_maint(dma_to_virt(dev, handle) + offset, size,
+				DMA_FROM_DEVICE);
 }
 
 static inline void dma_sync_single_range_for_device(struct device *dev,

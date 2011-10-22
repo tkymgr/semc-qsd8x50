@@ -1,7 +1,7 @@
 /* arch/arm/mach-msm/smd_debug.c
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2009-2010, Code Aurora Forum. All rights reserved.
  * Author: Brian Swetland <swetland@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -193,13 +193,14 @@ static int debug_read_diag_msg(char *buf, int max)
 
 static int dump_ch(char *buf, int max, int n,
 		  struct smd_half_channel *s,
-		  struct smd_half_channel *r)
+		   struct smd_half_channel *r,
+		   unsigned size)
 {
 	return scnprintf(
 		buf, max,
 		"ch%02d:"
 		" %8s(%04d/%04d) %c%c%c%c%c%c%c <->"
-		" %8s(%04d/%04d) %c%c%c%c%c%c%c\n", n,
+		" %8s(%04d/%04d) %c%c%c%c%c%c%c : %5x\n", n,
 		chstate(s->state), s->tail, s->head,
 		s->fDSR ? 'D' : 'd',
 		s->fCTS ? 'C' : 'c',
@@ -215,7 +216,8 @@ static int dump_ch(char *buf, int max, int n,
 		r->fRI ? 'I' : 'i',
 		r->fHEAD ? 'W' : 'w',
 		r->fTAIL ? 'R' : 'r',
-		r->fSTATE ? 'S' : 's'
+		r->fSTATE ? 'S' : 's',
+		size
 		);
 }
 
@@ -273,7 +275,7 @@ static int debug_read_ch_v1(char *buf, int max)
 			continue;
 		i += dump_ch(buf + i, max - i, n, shared,
 			     (shared + sizeof(struct smd_half_channel) +
-			      SMD_BUF_SIZE));
+			      SMD_BUF_SIZE), SMD_BUF_SIZE);
 	}
 
 	return i;
@@ -281,7 +283,8 @@ static int debug_read_ch_v1(char *buf, int max)
 
 static int debug_read_ch_v2(char *buf, int max)
 {
-	void *shared;
+	void *shared, *buffer;
+	unsigned buffer_sz;
 	int n, i = 0;
 
 	for (n = 0; n < SMD_CHANNELS; n++) {
@@ -290,11 +293,32 @@ static int debug_read_ch_v2(char *buf, int max)
 
 		if (shared == 0)
 			continue;
+
+		buffer = smem_get_entry(SMEM_SMD_FIFO_BASE_ID + n, &buffer_sz);
+
+		if (buffer == 0)
+			continue;
+
 		i += dump_ch(buf + i, max - i, n, shared,
-			     (shared + sizeof(struct smd_half_channel)));
+			     (shared + sizeof(struct smd_half_channel)),
+			     buffer_sz / 2);
 	}
 
 	return i;
+}
+
+static int debug_read_ch(char *buf, int max)
+{
+	uint32_t *smd_ver;
+
+	smd_ver = smem_alloc(SMEM_VERSION_SMD, 32 * sizeof(uint32_t));
+
+	if (smd_ver && (((smd_ver[VERSION_MODEM] >> 16) >= 1) ||
+			((smd_ver[VERSION_QDSP6] >> 16) >= 1) ||
+			((smd_ver[VERSION_DSPS] >> 16) >= 1)))
+		return debug_read_ch_v2(buf, max);
+	else
+		return debug_read_ch_v1(buf, max);
 }
 
 static int debug_read_smem_version(char *buf, int max)
@@ -356,7 +380,8 @@ static int debug_read_alloc_tbl(char *buf, int max)
 
 	shared = smem_find(ID_CH_ALLOC_TBL, sizeof(struct smd_alloc_elm[64]));
 
-	BUG_ON(!shared);
+	if (!shared)
+		return 0;
 
 	for (n = 0; n < 64; n++) {
 		i += scnprintf(buf + i, max - i,
@@ -441,19 +466,12 @@ static void debug_create(const char *name, mode_t mode,
 static int __init smd_debugfs_init(void)
 {
 	struct dentry *dent;
-	uint32_t *smd_ver;
 
 	dent = debugfs_create_dir("smd", 0);
 	if (IS_ERR(dent))
 		return PTR_ERR(dent);
 
-	smd_ver = smem_alloc(SMEM_VERSION_SMD, 32 * sizeof(uint32_t));
-
-	if (smd_ver && ((smd_ver[VERSION_MODEM] >> 16) >= 1))
-		debug_create("ch", 0444, dent, debug_read_ch_v2);
-	else
-		debug_create("ch", 0444, dent, debug_read_ch_v1);
-
+	debug_create("ch", 0444, dent, debug_read_ch);
 	debug_create("diag", 0444, dent, debug_read_diag_msg);
 	debug_create("mem", 0444, dent, debug_read_mem);
 	debug_create("version", 0444, dent, debug_read_smd_version);

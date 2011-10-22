@@ -1,72 +1,19 @@
 /* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Alternatively, and instead of the terms immediately above, this
- * software may be relicensed by the recipient at their option under the
- * terms of the GNU General Public License version 2 ("GPL") and only
- * version 2.  If the recipient chooses to relicense the software under
- * the GPL, then the recipient shall replace all of the text immediately
- * above and including this paragraph with the text immediately below
- * and between the words START OF ALTERNATE GPL TERMS and END OF
- * ALTERNATE GPL TERMS and such notices and license terms shall apply
- * INSTEAD OF the notices and licensing terms given above.
- *
- * START OF ALTERNATE GPL TERMS
- *
- * Copyright (c) 2010, Code Aurora Forum. All rights reserved.
- *
- * This software was originally licensed under the Code Aurora Forum
- * Inc. Dual BSD/GPL License version 1.1 and relicensed as permitted
- * under the terms thereof by a recipient under the General Public
- * License Version 2.
+ * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
  *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301, USA.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * END OF ALTERNATE GPL TERMS
  */
 
 #include <linux/module.h>
@@ -110,8 +57,13 @@ inline void *msm_gemini_q_out(struct msm_gemini_q *q_p)
 		data = q_entry_p->data;
 		kfree(q_entry_p);
 	} else {
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+		GMN_DBG("%s:%d] %s no entry\n", __func__, __LINE__,
+			q_p->name);
+#else
 		GMN_PR_ERR("%s:%d] %s no entry\n", __func__, __LINE__,
 			q_p->name);
+#endif
 	}
 
 	return data;
@@ -255,7 +207,11 @@ int msm_gemini_evt_get(struct msm_gemini_device *pgmn_dev,
 	buf_p = msm_gemini_q_out(&pgmn_dev->evt_q);
 
 	if (!buf_p) {
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+		GMN_DBG("%s:%d] no buffer\n", __func__, __LINE__);
+#else
 		GMN_PR_ERR("%s:%d] no buffer\n", __func__, __LINE__);
+#endif
 		return -EAGAIN;
 	}
 
@@ -294,6 +250,10 @@ void msm_gemini_err_irq(struct msm_gemini_device *pgmn_dev,
 	GMN_PR_ERR("%s:%d] error: %d\n", __func__, __LINE__, event);
 
 	buf.vbuf.type = MSM_GEMINI_EVT_ERR;
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+	if (event == MSM_GEMINI_HW_IRQ_STATUS_WE_Y_BUFFER_OVERFLOW_MASK)
+		buf.vbuf.type = MSM_GEMINI_EVT_BUFFER_OVER;
+#endif
 	rc = msm_gemini_q_in_buf(&pgmn_dev->evt_q, &buf);
 	if (!rc)
 		rc = msm_gemini_q_wakeup(&pgmn_dev->evt_q);
@@ -329,7 +289,11 @@ int msm_gemini_we_pingpong_irq(struct msm_gemini_device *pgmn_dev,
 		rc = msm_gemini_core_we_buf_update(buf_out);
 		kfree(buf_out);
 	} else {
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+		GMN_DBG("%s:%d] no output buffer\n", __func__, __LINE__);
+#else
 		GMN_PR_ERR("%s:%d] no output buffer\n", __func__, __LINE__);
+#endif
 		rc = -2;
 	}
 
@@ -338,6 +302,24 @@ int msm_gemini_we_pingpong_irq(struct msm_gemini_device *pgmn_dev,
 
 	return rc;
 }
+
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+int msm_gemini_re_register_we_buf(struct msm_gemini_core_buf *buf_out)
+{
+	int rc = 0;
+
+	GMN_DBG("%s:%d] Enter\n", __func__, __LINE__);
+
+	if (buf_out) {
+		rc = msm_gemini_core_we_buf_update(buf_out);
+	} else {
+		GMN_DBG("%s:%d] no output buffer\n", __func__, __LINE__);
+		rc = -2;
+	}
+
+	return rc;
+}
+#endif
 
 int msm_gemini_output_get(struct msm_gemini_device *pgmn_dev, void __user *to)
 {
@@ -350,8 +332,13 @@ int msm_gemini_output_get(struct msm_gemini_device *pgmn_dev, void __user *to)
 	buf_p = msm_gemini_q_out(&pgmn_dev->output_rtn_q);
 
 	if (!buf_p) {
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+		GMN_DBG("%s:%d] no output buffer return\n",
+			__func__, __LINE__);
+#else
 		GMN_PR_ERR("%s:%d] no output buffer return\n",
 			__func__, __LINE__);
+#endif
 		return -EAGAIN;
 	}
 
@@ -438,7 +425,11 @@ int msm_gemini_fe_pingpong_irq(struct msm_gemini_device *pgmn_dev,
 		kfree(buf_out);
 		msm_gemini_core_fe_start();
 	} else {
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+		GMN_DBG("%s:%d] no input buffer\n", __func__, __LINE__);
+#else
 		GMN_PR_ERR("%s:%d] no input buffer\n", __func__, __LINE__);
+#endif
 		rc = -2;
 	}
 
@@ -458,8 +449,13 @@ int msm_gemini_input_get(struct msm_gemini_device *pgmn_dev, void __user * to)
 	buf_p = msm_gemini_q_out(&pgmn_dev->input_rtn_q);
 
 	if (!buf_p) {
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+		GMN_DBG("%s:%d] no input buffer return\n",
+			__func__, __LINE__);
+#else
 		GMN_PR_ERR("%s:%d] no input buffer return\n",
 			__func__, __LINE__);
+#endif
 		return -EAGAIN;
 	}
 
@@ -530,11 +526,21 @@ int msm_gemini_irq(int event, void *context, void *data)
 {
 	struct msm_gemini_device *pgmn_dev =
 		(struct msm_gemini_device *) context;
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+	struct msm_gemini_core_buf *we_buf;
+#endif
 
 	switch (event) {
 	case MSM_GEMINI_HW_MASK_COMP_FRAMEDONE:
 		msm_gemini_framedone_irq(pgmn_dev, data);
 		msm_gemini_we_pingpong_irq(pgmn_dev, data);
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+		we_buf = msm_gemini_core_get_we_nonactive_buffer();
+		if (we_buf) {
+			msm_gemini_q_in_buf(&pgmn_dev->output_rtn_q, we_buf);
+			msm_gemini_q_wakeup(&pgmn_dev->output_rtn_q);
+		}
+#endif
 		break;
 
 	case MSM_GEMINI_HW_MASK_COMP_FE:
@@ -542,7 +548,14 @@ int msm_gemini_irq(int event, void *context, void *data)
 		break;
 
 	case MSM_GEMINI_HW_MASK_COMP_WE:
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+		if (data)
+			msm_gemini_re_register_we_buf(data);
+		msm_gemini_err_irq(pgmn_dev,
+			MSM_GEMINI_HW_IRQ_STATUS_WE_Y_BUFFER_OVERFLOW_MASK);
+#else
 		msm_gemini_we_pingpong_irq(pgmn_dev, data);
+#endif
 		break;
 
 	case MSM_GEMINI_HW_MASK_COMP_RESET_ACK:
@@ -667,6 +680,7 @@ int msm_gemini_ioctl_hw_cmds(struct msm_gemini_device *pgmn_dev,
 
 	if (copy_from_user(hw_cmds_p, arg, len)) {
 		GMN_PR_ERR("%s:%d] failed\n", __func__, __LINE__);
+		kfree(hw_cmds_p);
 		return -EFAULT;
 	}
 
@@ -677,10 +691,11 @@ int msm_gemini_ioctl_hw_cmds(struct msm_gemini_device *pgmn_dev,
 	if (is_copy_to_user >= 0) {
 		if (copy_to_user(arg, hw_cmds_p, len)) {
 			GMN_PR_ERR("%s:%d] failed\n", __func__, __LINE__);
+			kfree(hw_cmds_p);
 			return -EFAULT;
 		}
 	}
-
+	kfree(hw_cmds_p);
 	return 0;
 }
 
@@ -710,8 +725,13 @@ int msm_gemini_start(struct msm_gemini_device *pgmn_dev, void * __user arg)
 			msm_gemini_core_we_buf_update(buf_out);
 			kfree(buf_out);
 		} else {
+#if defined(CONFIG_SEMC_CAMERA_MODULE) || defined(CONFIG_SEMC_SUB_CAMERA_MODULE)
+			GMN_DBG("%s:%d] no output buffer\n",
+			__func__, __LINE__);
+#else
 			GMN_PR_ERR("%s:%d] no output buffer\n",
 			__func__, __LINE__);
+#endif
 			break;
 		}
 	}

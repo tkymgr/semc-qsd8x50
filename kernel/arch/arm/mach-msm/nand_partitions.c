@@ -114,6 +114,7 @@ struct flash_partition_table {
 	struct flash_partition_entry part_entry[16];
 };
 
+#ifdef CONFIG_MACH_ES209RA
 static struct mtd_partition nand_partitions[] = {
         {
                 .name           = "appslog",
@@ -173,6 +174,7 @@ static struct mtd_partition nand_partitions[] = {
                 .mask_flags     = MTD_WRITEABLE,  /* force read-only */
         }
 };
+#endif
 
 static int get_nand_partitions(void)
 {
@@ -192,10 +194,13 @@ static int get_nand_partitions(void)
 	if (!partition_table) {
 		printk(KERN_WARNING "%s: no flash partition table in shared "
 		       "memory\n", __func__);
+#ifdef CONFIG_MACH_ES209RA
 		msm_nand_data.nr_parts = ARRAY_SIZE(nand_partitions);
 		msm_nand_data.parts = nand_partitions;
 		return 0;
-		//return -ENOENT;
+#else
+		return -ENOENT;
+#endif
 	}
 
 	if ((partition_table->magic1 != (u32) FLASH_PART_MAGIC1) ||

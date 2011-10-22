@@ -30,7 +30,7 @@ struct xt_statistic_info {
 			__u32	count; /* unused */
 		} nth;
 	} u;
-	struct xt_statistic_info	*master __attribute__((aligned(8)));
+	struct xt_statistic_priv *master __attribute__((aligned(8)));
 };
 
 #endif /* _XT_STATISTIC_H */

@@ -151,7 +151,7 @@ static enum hrtimer_restart msm_serial_clock_off(struct hrtimer *timer) {
 	struct msm_port *msm_port = container_of(timer, struct msm_port,
 						 clk_off_timer);
 	struct uart_port *port = &msm_port->uart;
-	struct circ_buf *xmit = &port->info->xmit;
+	struct circ_buf *xmit = &port->state->xmit;
 	unsigned long flags;
 	int ret = HRTIMER_NORESTART;
 
@@ -251,9 +251,8 @@ static irqreturn_t msm_rx_irq(int irq, void *dev_id)
 	/* we missed an rx while asleep - it must be a wakeup indicator
 	 */
 	if (inject_wakeup) {
-		struct tty_struct *tty = port->info->port.tty;
-		tty_insert_flip_char(tty, msm_port->wakeup.rx_to_inject,
-				     TTY_NORMAL);
+		struct tty_struct *tty = port->state->port.tty;
+		tty_insert_flip_char(tty, WAKE_UP_IND, TTY_NORMAL);
 		tty_flip_buffer_push(tty);
 	}
 
@@ -264,7 +263,7 @@ static irqreturn_t msm_rx_irq(int irq, void *dev_id)
 
 static void handle_rx(struct uart_port *port)
 {
-	struct tty_struct *tty = port->info->port.tty;
+	struct tty_struct *tty = port->state->port.tty;
 	unsigned int sr;
 
 	/*
@@ -312,7 +311,7 @@ static void handle_rx(struct uart_port *port)
 
 static void handle_tx(struct uart_port *port)
 {
-	struct circ_buf *xmit = &port->info->xmit;
+	struct circ_buf *xmit = &port->state->xmit;
 	struct msm_port *msm_port = UART_TO_MSM(port);
 	int sent_tx;
 
@@ -353,7 +352,7 @@ static void handle_delta_cts(struct uart_port *port)
 {
 	msm_write(port, UART_CR_CMD_RESET_CTS, UART_CR);
 	port->icount.cts++;
-	wake_up_interruptible(&port->info->delta_msr_wait);
+	wake_up_interruptible(&port->state->port.delta_msr_wait);
 }
 
 static irqreturn_t msm_irq(int irq, void *dev_id)
@@ -920,9 +919,7 @@ static void msm_console_write(struct console *co, const char *s,
 		spin_lock(&port->lock);
 	}
 
-	clk_enable(msm_port->clk);
 	uart_console_write(port, s, count, msm_console_putchar);
-	clk_disable(msm_port->clk);
 
 	if (locked)
 		spin_unlock(&port->lock);

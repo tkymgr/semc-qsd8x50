@@ -1,57 +1,18 @@
 /* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Code Aurora Forum nor
- *       the names of its contributors may be used to endorse or promote
- *       products derived from this software without specific prior written
- *       permission.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
  *
- * Alternatively, provided that this notice is retained in full, this software
- * may be relicensed by the recipient under the terms of the GNU General Public
- * License version 2 ("GPL") and only version 2, in which case the provisions of
- * the GPL apply INSTEAD OF those given above.  If the recipient relicenses the
- * software under the GPL, then the identification text in the MODULE_LICENSE
- * macro must be changed to reflect "GPLv2" instead of "Dual BSD/GPL".  Once a
- * recipient changes the license terms to the GPL, subsequent recipients shall
- * not relicense under alternate licensing terms, including the BSD or dual
- * BSD/GPL terms.  In addition, the following license statement immediately
- * below and between the words START and END shall also then apply when this
- * software is relicensed under the GPL:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * START
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 and only version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- * details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * END
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  *
  */
 /*
@@ -76,6 +37,9 @@ static bool inuse;
 struct marimba marimba_modules[MARIMBA_NUM_CHILD + 1];
 
 #define MARIMBA_VERSION_REG		0x11
+
+struct marimba_platform_data *marimba_pdata;
+static uint32_t marimba_gpio_count;
 
 #ifdef CONFIG_I2C_SSBI
 #define NUM_ADD	MARIMBA_NUM_CHILD
@@ -284,6 +248,26 @@ int marimba_read(struct marimba *marimba, u8 reg, u8 *value, unsigned num_bytes)
 }
 EXPORT_SYMBOL(marimba_read);
 
+int timpani_read(struct marimba *marimba, u8 reg, u8 *value, unsigned num_bytes)
+{
+	return marimba_read_bit_mask(marimba, reg, value, num_bytes, 0xff);
+}
+EXPORT_SYMBOL(timpani_read);
+
+int timpani_write(struct marimba *marimba, u8 reg,
+					u8 *value, unsigned num_bytes)
+{
+	return marimba_write_bit_mask(marimba, reg, value, num_bytes, 0xff);
+}
+EXPORT_SYMBOL(timpani_write);
+
+static int cur_codec_type = -1;
+
+int adie_get_detected_codec_type(void)
+{
+	return cur_codec_type;
+}
+EXPORT_SYMBOL(adie_get_detected_codec_type);
 
 static struct device *
 add_numbered_child(unsigned chip, const char *name, int num,
@@ -331,63 +315,110 @@ static inline struct device *add_child(unsigned chip, const char *name,
 	return add_numbered_child(chip, name, -1, pdata, pdata_len);
 }
 
-static int marimba_add_child(struct marimba_platform_data *pdata)
+static int marimba_add_child(struct marimba_platform_data *pdata,
+					u8 driver_data)
 {
 	struct device	*child;
 
-	child = add_child(MARIMBA_SLAVE_ID_FM, "marimba_fm",
+	/* Add BT,FM and TS for Marimba only */
+	if (driver_data == MARIMBA_ID) {
+		child = add_child(MARIMBA_SLAVE_ID_FM, "marimba_fm",
 					  pdata->fm, sizeof(*pdata->fm));
-	if (IS_ERR(child))
-		return PTR_ERR(child);
+		if (IS_ERR(child))
+			return PTR_ERR(child);
+	}
 
-	child = add_child(MARIMBA_SLAVE_ID_CDC, "marimba_codec",
+	/* Add Codec for Marimba and Timpani */
+	if (driver_data == MARIMBA_ID) {
+		child = add_child(MARIMBA_SLAVE_ID_CDC, "marimba_codec",
 					  pdata->codec, sizeof(*pdata->codec));
-	if (IS_ERR(child))
-		return PTR_ERR(child);
+		if (IS_ERR(child))
+			return PTR_ERR(child);
+	} else if (driver_data == TIMPANI_ID) {
+		child = add_child(MARIMBA_SLAVE_ID_CDC, "timpani_codec",
+					  pdata->codec, sizeof(*pdata->codec));
+		if (IS_ERR(child))
+			return PTR_ERR(child);
+	}
 
-#ifdef CONFIG_I2C_SSBI
-	child = add_child(MARIMBA_ID_TSADC, "marimba_tsadc",
-					  pdata->tsadc, sizeof(*pdata->tsadc));
-	if (IS_ERR(child))
-		return PTR_ERR(child);
+#if defined(CONFIG_I2C_SSBI)
+	if (pdata->tsadc != NULL) {
+		child = add_child(MARIMBA_ID_TSADC, "marimba_tsadc",
+				pdata->tsadc, sizeof(*pdata->tsadc));
+		if (IS_ERR(child))
+			return PTR_ERR(child);
+	}
 #endif
-
 	return 0;
 }
 
-static void marimba_init_reg(struct i2c_client *client)
+
+int marimba_gpio_config(int gpio_value)
+{
+	struct marimba *marimba = &marimba_modules[MARIMBA_SLAVE_ID_MARIMBA];
+	struct marimba_platform_data *pdata = marimba_pdata;
+	int rc = 0;
+
+	/* Clients BT/FM need to manage GPIO 34 on Fusion for its clocks */
+
+	mutex_lock(&marimba->xfer_lock);
+
+	if (gpio_value) {
+		marimba_gpio_count++;
+		if (marimba_gpio_count == 1)
+			rc = pdata->marimba_gpio_config(1);
+	} else {
+		marimba_gpio_count--;
+		if (marimba_gpio_count == 0)
+			rc = pdata->marimba_gpio_config(0);
+	}
+
+	mutex_unlock(&marimba->xfer_lock);
+
+	return rc;
+
+}
+EXPORT_SYMBOL(marimba_gpio_config);
+
+static int get_codec_type(void)
+{
+
+	struct marimba *marimba = &marimba_modules[MARIMBA_SLAVE_ID_MARIMBA];
+	u8 rd_val;
+	int ret;
+
+	marimba->mod_id = MARIMBA_SLAVE_ID_MARIMBA;
+	/* Enable the Mode for Marimba/Timpani */
+	ret = marimba_read(marimba, MARIMBA_VERSION_REG, &rd_val, 1);
+
+	if (ret >= 0) {
+		if (rd_val & 0x20) {
+			return TIMPANI_ID;
+		} else {
+			ret = marimba_read(marimba, 0x02, &rd_val, 1);
+			if (rd_val == 0x77)
+				return MARIMBA_ID;
+		}
+	}
+
+	return -ENODEV;
+}
+
+static void marimba_init_reg(struct i2c_client *client, u8 driver_data)
 {
 	struct marimba_platform_data *pdata = client->dev.platform_data;
 	struct marimba *marimba = &marimba_modules[MARIMBA_SLAVE_ID_MARIMBA];
-	int i, rc;
-	u8 buf[1], reg_version;
-	static struct vreg *vreg_s2;
+	int i;
+	u8 buf[1];
 
 	buf[0] = 0x10;
 
 	marimba->mod_id = MARIMBA_SLAVE_ID_MARIMBA;
-	/* Enable the Marimba Mode */
+	/* Enable the Mode for Marimba/Timpani */
 	marimba_write(marimba, MARIMBA_MODE, buf, 1);
 
-	for (i = 1; i < MARIMBA_NUM_CHILD; i++)
+	for (i = (driver_data+1); i < MARIMBA_NUM_CHILD; i++)
 		marimba_write(marimba, i , &pdata->slave_id[i], 1);
-
-	marimba_read(marimba, MARIMBA_VERSION_REG, &reg_version, 1);
-
-	vreg_s2 = vreg_get(NULL, "s2");
-	if (IS_ERR(vreg_s2)) {
-		printk(KERN_ERR "%s: vreg get failed (%ld)/n",
-			__func__, PTR_ERR(vreg_s2));
-		return;
-	}
-
-	if (reg_version >= 1) {
-		rc = vreg_disable(vreg_s2);
-		if (rc) {
-			printk(KERN_ERR "%s: return val: %d \n",
-				__func__, rc);
-		}
-	}
 }
 
 static int marimba_probe(struct i2c_client *client,
@@ -413,43 +444,60 @@ static int marimba_probe(struct i2c_client *client,
 		return -EBUSY;
 	}
 
-	for (i = 0; i <= NUM_ADD; i++) {
-		marimba = &marimba_modules[i];
+	/* First, identify the codec type */
+	if (pdata->marimba_setup != NULL)
+		pdata->marimba_setup();
 
-		if (i == 0)
+	marimba = &marimba_modules[0];
 			marimba->client = client;
-		else {
-			if (i != MARIMBA_ID_TSADC)
-				marimba->client = i2c_new_dummy(client->adapter,
-							pdata->slave_id[i]);
-			else {
-				ssbi_adap = i2c_get_adapter(MARIMBA_SSBI_ADAP);
-				marimba->client = i2c_new_dummy(ssbi_adap,
-							pdata->slave_id[i]);
-			}
+	mutex_init(&marimba->xfer_lock);
 
-			if (!marimba->client) {
-				dev_err(&marimba->client->dev,
-					"can't attach client %d\n", i);
-				status = -ENOMEM;
-				goto fail;
-			}
-			strlcpy(marimba->client->name, id->name,
-						sizeof(marimba->client->name));
+	if (get_codec_type() != (int)id->driver_data) {
+		if (pdata->marimba_shutdown != NULL)
+			pdata->marimba_shutdown();
+		status = -ENODEV;
+		mutex_destroy(&marimba->xfer_lock);
+		goto fail;
+
+		} else {
+		cur_codec_type = (int)id->driver_data;
+		dev_dbg(&client->dev, "Device %d available\n",
+			(int)id->driver_data);
+	}
+
+	for (i = 1; i <= NUM_ADD; i++) {
+
+		/* Skip adding BT/FM for Timpani */
+		if (i == 1 && id->driver_data == TIMPANI_ID)
+			i++;
+		marimba = &marimba_modules[i];
+		if (i != MARIMBA_ID_TSADC)
+			marimba->client = i2c_new_dummy(client->adapter,
+						pdata->slave_id[i]);
+		else {
+			ssbi_adap = i2c_get_adapter(MARIMBA_SSBI_ADAP);
+			marimba->client = i2c_new_dummy(ssbi_adap,
+						pdata->slave_id[i]);
 		}
+		if (!marimba->client) {
+			dev_err(&marimba->client->dev,
+				"can't attach client %d\n", i);
+			status = -ENOMEM;
+			goto fail;
+		}
+		strlcpy(marimba->client->name, id->name,
+			sizeof(marimba->client->name));
 
 		mutex_init(&marimba->xfer_lock);
 	}
 
 	inuse = true;
 
-	if (pdata->marimba_setup != NULL)
-		pdata->marimba_setup();
+	marimba_init_reg(client, id->driver_data);
 
-	marimba_init_reg(client);
+	status = marimba_add_child(pdata, id->driver_data);
 
-	status = marimba_add_child(pdata);
-
+	marimba_pdata = pdata;
 	return 0;
 
 fail:
@@ -478,7 +526,8 @@ static int __devexit marimba_remove(struct i2c_client *client)
 }
 
 static struct i2c_device_id marimba_id_table[] = {
-	{"marimba", 0x0},
+	{"marimba", MARIMBA_ID},
+	{"timpani", TIMPANI_ID},
 	{}
 };
 MODULE_DEVICE_TABLE(i2c, marimba_id_table);
@@ -507,5 +556,5 @@ module_exit(marimba_exit);
 
 MODULE_DESCRIPTION("Marimba Top level Driver");
 MODULE_ALIAS("platform:marimba-core");
-MODULE_LICENSE("Dual BSD/GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_VERSION("0.1");

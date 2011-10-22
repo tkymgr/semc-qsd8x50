@@ -4,15 +4,6 @@
 
 obj-$(CONFIG_PROC_FS) += proc.o
 
-ifeq ($(CONFIG_ARM),y)
-# Warnings are produced by the current arm cross compiler (v4.2.1) causing
-# build abort. Version 4.3.1 of the compiler does not create this warning.
-# So, remove the -Werror until the compiler can be updated for all build
-# platforms to v4.3.1
-CFLAGS_REMOVE_array.o = -Werror
-CFLAGS_REMOVE_vmcore.o = -Werror
-endif
-
 proc-y			:= nommu.o task_nommu.o
 proc-$(CONFIG_MMU)	:= mmu.o task_mmu.o
 
@@ -27,6 +18,7 @@ proc-y	+= meminfo.o
 proc-y	+= stat.o
 proc-y	+= uptime.o
 proc-y	+= version.o
+proc-y	+= softirqs.o
 proc-$(CONFIG_PROC_SYSCTL)	+= proc_sysctl.o
 proc-$(CONFIG_NET)		+= proc_net.o
 proc-$(CONFIG_PROC_KCORE)	+= kcore.o

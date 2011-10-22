@@ -1,72 +1,19 @@
 /* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above
- *       copyright notice, this list of conditions and the following
- *       disclaimer in the documentation and/or other materials provided
- *       with the distribution.
- *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
- *       contributors may be used to endorse or promote products derived
- *       from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * Alternatively, and instead of the terms immediately above, this
- * software may be relicensed by the recipient at their option under the
- * terms of the GNU General Public License version 2 ("GPL") and only
- * version 2.  If the recipient chooses to relicense the software under
- * the GPL, then the recipient shall replace all of the text immediately
- * above and including this paragraph with the text immediately below
- * and between the words START OF ALTERNATE GPL TERMS and END OF
- * ALTERNATE GPL TERMS and such notices and license terms shall apply
- * INSTEAD OF the notices and licensing terms given above.
- *
- * START OF ALTERNATE GPL TERMS
- *
- * Copyright (c) 2010, Code Aurora Forum. All rights reserved.
- *
- * This software was originally licensed under the Code Aurora Forum
- * Inc. Dual BSD/GPL License version 1.1 and relicensed as permitted
- * under the terms thereof by a recipient under the General Public
- * License Version 2.
+ * Copyright (C) 2011 Sony Ericsson Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
  *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
  * 02110-1301, USA.
- *
- * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
- * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
- * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- * END OF ALTERNATE GPL TERMS
  *
  */
 
@@ -87,8 +34,14 @@
 #include <asm/system.h>
 #include <asm/mach-types.h>
 #include <mach/hardware.h>
+#include <mach/msm_reqs.h>
+#include <linux/pm_runtime.h>
 
 #include "msm_fb.h"
+
+
+#define MSM_AXI_QOS_DTV_ON     192000
+
 
 static int dtv_probe(struct platform_device *pdev);
 static int dtv_remove(struct platform_device *pdev);
@@ -103,17 +56,35 @@ static struct clk *tv_src_clk;
 static struct clk *tv_enc_clk;
 static struct clk *tv_dac_clk;
 static struct clk *hdmi_clk;
+static struct clk *mdp_tv_clk;
+static unsigned long tv_src_clk_default_rate;
+
+static int mdp4_dtv_runtime_suspend(struct device *dev)
+{
+	dev_dbg(dev, "pm_runtime: suspending...\n");
+	return 0;
+}
+
+static int mdp4_dtv_runtime_resume(struct device *dev)
+{
+	dev_dbg(dev, "pm_runtime: resuming...\n");
+	return 0;
+}
+
+static const struct dev_pm_ops mdp4_dtv_dev_pm_ops = {
+	.runtime_suspend = mdp4_dtv_runtime_suspend,
+	.runtime_resume = mdp4_dtv_runtime_resume,
+};
 
 static struct platform_driver dtv_driver = {
 	.probe = dtv_probe,
 	.remove = dtv_remove,
 	.suspend = NULL,
-	.suspend_late = NULL,
-	.resume_early = NULL,
 	.resume = NULL,
 	.shutdown = NULL,
 	.driver = {
 		   .name = "dtv",
+		   .pm = &mdp4_dtv_dev_pm_ops,
 		   },
 };
 
@@ -121,12 +92,15 @@ static struct lcdc_platform_data *dtv_pdata;
 
 static int dtv_off(struct platform_device *pdev)
 {
-	int ret = 0;
+	int ret = 0, r = 0;
 
 	ret = panel_next_off(pdev);
 
 	clk_disable(tv_enc_clk);
 	clk_disable(tv_dac_clk);
+	clk_disable(hdmi_clk);
+	if (mdp_tv_clk)
+		clk_disable(mdp_tv_clk);
 
 	if (dtv_pdata && dtv_pdata->lcdc_power_save)
 		dtv_pdata->lcdc_power_save(0);
@@ -134,8 +108,11 @@ static int dtv_off(struct platform_device *pdev)
 	if (dtv_pdata && dtv_pdata->lcdc_gpio_config)
 		ret = dtv_pdata->lcdc_gpio_config(0);
 
+	r = clk_set_rate(tv_src_clk, tv_src_clk_default_rate);
 	pm_qos_update_requirement(PM_QOS_SYSTEM_BUS_FREQ , "dtv",
 					PM_QOS_DEFAULT_VALUE);
+	pr_info("%s: tv_src_clk=%ldkHz, pm_qos_rate=%dkHz, [%d]\n", __func__,
+		tv_src_clk_default_rate/1000, PM_QOS_DEFAULT_VALUE, r);
 
 	return ret;
 }
@@ -144,31 +121,42 @@ static int dtv_on(struct platform_device *pdev)
 {
 	int ret = 0;
 	struct msm_fb_data_type *mfd;
-	unsigned long panel_pixclock_freq , pm_qos_freq;
+	unsigned long panel_pixclock_freq , pm_qos_rate;
 
 	mfd = platform_get_drvdata(pdev);
 	panel_pixclock_freq = mfd->fbi->var.pixclock;
 
-	if (panel_pixclock_freq > 58000000)
-		/* pm_qos_freq should be in Khz */
-		pm_qos_freq = panel_pixclock_freq / 1000 ;
-	else
-		pm_qos_freq = 58000;
+#ifdef CONFIG_MSM_NPA_SYSTEM_BUS
+	pm_qos_rate = MSM_AXI_FLOW_MDP_DTV_720P_2BPP;
+#else
+	pm_qos_rate = MSM_AXI_QOS_DTV_ON;
+#endif
 
 	pm_qos_update_requirement(PM_QOS_SYSTEM_BUS_FREQ , "dtv",
-						pm_qos_freq);
+						pm_qos_rate);
 	mfd = platform_get_drvdata(pdev);
+
+	ret = clk_set_rate(tv_src_clk, mfd->fbi->var.pixclock);
+	if (ret) {
+		pr_info("%s: clk_set_rate(%d) failed\n", __func__,
+			mfd->fbi->var.pixclock);
+		if (mfd->fbi->var.pixclock == 27030000)
+			mfd->fbi->var.pixclock = 27000000;
+		ret = clk_set_rate(tv_src_clk, mfd->fbi->var.pixclock);
+	}
+	pr_info("%s: tv_src_clk=%dkHz, pm_qos_rate=%ldkHz, [%d]\n", __func__,
+		mfd->fbi->var.pixclock/1000, pm_qos_rate, ret);
 
 	clk_enable(tv_enc_clk);
 	clk_enable(tv_dac_clk);
 	clk_enable(hdmi_clk);
+	if (mdp_tv_clk)
+		clk_enable(mdp_tv_clk);
 
 	if (dtv_pdata && dtv_pdata->lcdc_power_save)
 		dtv_pdata->lcdc_power_save(1);
 	if (dtv_pdata && dtv_pdata->lcdc_gpio_config)
 		ret = dtv_pdata->lcdc_gpio_config(1);
-
-	clk_set_rate(tv_src_clk, mfd->fbi->var.pixclock);
 
 	ret = panel_next_on(pdev);
 	return ret;
@@ -184,8 +172,6 @@ static int dtv_probe(struct platform_device *pdev)
 
 	if (pdev->id == 0) {
 		dtv_pdata = pdev->dev.platform_data;
-		if (dtv_pdata && dtv_pdata->lcdc_power_save)
-			dtv_pdata->lcdc_power_save(1);
 		return 0;
 	}
 
@@ -255,6 +241,9 @@ static int dtv_probe(struct platform_device *pdev)
 	if (rc)
 		goto dtv_probe_err;
 
+	pm_runtime_set_active(&pdev->dev);
+	pm_runtime_enable(&pdev->dev);
+
 	pdev_list[pdev_list_cnt++] = pdev;
 		return 0;
 
@@ -266,6 +255,8 @@ dtv_probe_err:
 static int dtv_remove(struct platform_device *pdev)
 {
 	pm_qos_remove_requirement(PM_QOS_SYSTEM_BUS_FREQ , "dtv");
+
+	pm_runtime_disable(&pdev->dev);
 	return 0;
 }
 
@@ -289,14 +280,22 @@ static int __init dtv_driver_init(void)
 	}
 
 	tv_src_clk = clk_get(NULL, "tv_src_clk");
-	if (IS_ERR(tv_src_clk))
-		tv_src_clk = tv_dac_clk; /* Fallback to slave */
+	if (IS_ERR(tv_src_clk)) {
+		tv_src_clk = tv_enc_clk; /* Fallback to slave */
+		pr_info("%s: tv_src_clk not available, using tv_enc_clk"
+			" instead\n", __func__);
+	}
+	tv_src_clk_default_rate = clk_get_rate(tv_src_clk);
 
 	hdmi_clk = clk_get(NULL, "hdmi_clk");
 	if (IS_ERR(hdmi_clk)) {
 		printk(KERN_ERR "error: can't get hdmi_clk!\n");
 		return IS_ERR(hdmi_clk);
 	}
+
+	mdp_tv_clk = clk_get(NULL, "mdp_tv_clk");
+	if (IS_ERR(mdp_tv_clk))
+		mdp_tv_clk = NULL;
 
 	pm_qos_add_requirement(PM_QOS_SYSTEM_BUS_FREQ , "dtv",
 				PM_QOS_DEFAULT_VALUE);

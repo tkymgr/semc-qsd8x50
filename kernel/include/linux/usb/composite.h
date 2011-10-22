@@ -38,7 +38,6 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 #include <linux/switch.h>
-#include <linux/workqueue.h>
 
 struct usb_composite_dev;
 struct usb_configuration;
@@ -103,7 +102,7 @@ struct usb_function {
 	struct usb_descriptor_header	**hs_descriptors;
 
 	struct usb_configuration	*config;
-	int				disabled;
+	int				enabled;
 
 	/* REVISIT:  bind() functions can be marked __init, which
 	 * makes trouble for section mismatch analysis.  See if
@@ -132,7 +131,6 @@ struct usb_function {
 	/* private: */
 	/* internals */
 	struct list_head		list;
-	DECLARE_BITMAP(endpoints, 32);
 	struct device			*dev;
 };
 
@@ -142,7 +140,6 @@ int usb_function_deactivate(struct usb_function *);
 int usb_function_activate(struct usb_function *);
 
 int usb_interface_id(struct usb_configuration *, struct usb_function *);
-
 void usb_function_set_enabled(struct usb_function *, int);
 void usb_composite_force_reset(struct usb_composite_dev *, int);
 
@@ -256,6 +253,10 @@ int usb_add_config(struct usb_composite_dev *,
  *	value; it should return zero on successful initialization.
  * @unbind: Reverses @bind(); called as a side effect of unregistering
  *	this driver.
+ * @suspend: Notifies when the host stops sending USB traffic,
+ *	after function notifications
+ * @resume: Notifies configuration when the host restarts USB traffic,
+ *	before function notifications
  *
  * Devices default to reporting self powered operation.  Devices which rely
  * on bus powered operation should report this in their @bind() method.
@@ -283,6 +284,11 @@ struct usb_composite_driver {
 
 	int			(*bind)(struct usb_composite_dev *);
 	int			(*unbind)(struct usb_composite_dev *);
+
+	/* global suspend hooks */
+	void			(*suspend)(struct usb_composite_dev *);
+	void			(*resume)(struct usb_composite_dev *);
+
 	void			(*enable_function)(struct usb_function *f, int enable);
 };
 
@@ -329,6 +335,7 @@ struct usb_composite_dev {
 
 	struct usb_configuration	*config;
 
+	/* private: */
 	/* internals */
 	struct usb_device_descriptor	desc;
 	struct list_head		configs;
@@ -342,15 +349,16 @@ struct usb_composite_dev {
 
 	/* protects at least deactivation count */
 	spinlock_t			lock;
-
-	struct switch_dev sdev;
-	/* used by usb_composite_force_reset to avoid signalling switch changes */
+	/* used by usb_composite_force_reset to avoid
+	 * signalling switch changes
+	 */
 	bool				mute_switch;
+	struct switch_dev sdev;
 	struct work_struct switch_work;
 };
 
 extern int usb_string_id(struct usb_composite_dev *c);
-#if 0
+
 /* messaging utils */
 #define DBG(d, fmt, args...) \
 	dev_dbg(&(d)->gadget->dev , fmt , ## args)
@@ -362,5 +370,5 @@ extern int usb_string_id(struct usb_composite_dev *c);
 	dev_warn(&(d)->gadget->dev , fmt , ## args)
 #define INFO(d, fmt, args...) \
 	dev_info(&(d)->gadget->dev , fmt , ## args)
-#endif
+
 #endif	/* __LINUX_USB_COMPOSITE_H */

@@ -19,6 +19,7 @@
 #include <linux/hrtimer.h>
 #include <linux/interrupt.h>
 #include <linux/wakelock.h>
+#include <mach/gpio.h>
 
 struct gpio_kp {
 	struct gpio_event_input_devs *input_devs;
@@ -219,7 +220,7 @@ static irqreturn_t gpio_keypad_irq_handler(int irq_in, void *dev_id)
 		return IRQ_HANDLED;
 
 	for (i = 0; i < mi->ninputs; i++)
-		disable_irq(gpio_to_irq(mi->input_gpios[i]));
+		disable_irq_nosync(gpio_to_irq(mi->input_gpios[i]));
 	for (i = 0; i < mi->noutputs; i++) {
 		if (gpio_keypad_flags & GPIOKPF_DRIVE_INACTIVE)
 			gpio_set_value(mi->output_gpios[i],
@@ -228,7 +229,7 @@ static irqreturn_t gpio_keypad_irq_handler(int irq_in, void *dev_id)
 			gpio_direction_input(mi->output_gpios[i]);
 	}
 	wake_lock(&kp->wake_lock);
-	hrtimer_start(&kp->timer, ktime_set(0, 10000), HRTIMER_MODE_REL);
+	hrtimer_start(&kp->timer, ktime_set(0, 0), HRTIMER_MODE_REL);
 	return IRQ_HANDLED;
 }
 
@@ -388,8 +389,7 @@ int gpio_event_matrix_func(struct gpio_event_input_devs *input_devs,
 
 		if (kp->use_irq)
 			wake_lock(&kp->wake_lock);
-		hrtimer_start(&kp->timer, ktime_set(0, 10000),
-				 HRTIMER_MODE_REL);
+		hrtimer_start(&kp->timer, ktime_set(0, 0), HRTIMER_MODE_REL);
 
 		return 0;
 	}

@@ -1,5 +1,4 @@
 /* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
- * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,6 +25,7 @@
 #include <linux/delay.h>
 #include <linux/wait.h>
 #include "msm_vfe7x.h"
+#include <linux/pm_qos_params.h>
 
 #define QDSP_CMDQUEUE 25
 
@@ -45,7 +45,9 @@
 
 #define VFE_ADSP_EVENT 0xFFFF
 #define SNAPSHOT_MASK_MODE 0x00000002
-#define MSM_AXI_QOS_PREVIEW	192000
+#define MSM_AXI_QOS_PREVIEW		192000
+#define MSM_AXI_QOS_SNAPSHOT	192000
+
 
 static struct msm_adsp_module *qcam_mod;
 static struct msm_adsp_module *vfe_mod;
@@ -251,8 +253,8 @@ static void vfe_7x_release(struct platform_device *pdev)
 	kfree(extdata);
 	extlen = 0;
 
-	/* release AXI frequency request */
-	release_axi_qos();
+	/* set back the AXI frequency to default */
+	update_axi_qos(PM_QOS_DEFAULT_VALUE);
 }
 
 static int vfe_7x_init(struct msm_vfe_callback *presp,
@@ -273,11 +275,7 @@ static int vfe_7x_init(struct msm_vfe_callback *presp,
 	rc = msm_camio_enable(dev);
 	if (rc < 0)
 		return rc;
-
-	/* Set required axi bus frequency */
-	rc = request_axi_qos(MSM_AXI_QOS_PREVIEW);
-	if (rc < 0)
-		return rc;
+	msm_camio_camif_pad_reg_reset();
 
 	extlen = sizeof(struct vfe_frame_extra);
 
@@ -608,7 +606,14 @@ static int vfe_7x_config(struct msm_vfe_cfg_cmd *cmd, void *data)
 				op_mode = *(++_mode);
 				if (op_mode & SNAPSHOT_MASK_MODE) {
 					/* request AXI bus for snapshot */
-					if (update_axi_qos(MSM_AXI_MAX_FREQ)
+					if (update_axi_qos(MSM_AXI_QOS_SNAPSHOT)
+						< 0) {
+						rc = -EFAULT;
+						goto config_failure;
+					}
+				} else {
+					/* request AXI bus for snapshot */
+					if (update_axi_qos(MSM_AXI_QOS_PREVIEW)
 						< 0) {
 						rc = -EFAULT;
 						goto config_failure;
@@ -710,4 +715,13 @@ void msm_camvfe_fn_init(struct msm_camvfe_fn *fptr, void *data)
 	fptr->vfe_disable = vfe_7x_disable;
 	fptr->vfe_release = vfe_7x_release;
 	vfe_syncdata = data;
+}
+
+void msm_camvpe_fn_init(struct msm_camvpe_fn *fptr, void *data)
+{
+	fptr->vpe_reg		= NULL;
+	fptr->send_frame_to_vpe	= NULL;
+	fptr->vpe_config	= NULL;
+	fptr->vpe_cfg_update	= NULL;
+	fptr->dis		= NULL;
 }

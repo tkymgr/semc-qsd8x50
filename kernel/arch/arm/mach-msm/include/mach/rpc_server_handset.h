@@ -1,5 +1,4 @@
 /* Copyright (c) 2009-2010, Code Aurora Forum. All rights reserved.
- * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -37,10 +36,5 @@ struct msm_handset_platform_data {
 };
 
 void report_headset_status(bool connected);
-
-#ifdef CONFIG_SEMC_SEPORT_PLATFORM
-int handset_register_vad_det_callback(int (*func)(int, void*),
-				      void *data);
-#endif /* CONFIG_SEMC_SEPORT_PLATFORM */
 
 #endif

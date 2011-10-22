@@ -1,28 +1,30 @@
-/* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2010, Code Aurora Forum. All rights reserved.
+ * Copyright (C) 2010 Sony Ericsson Mobile Communications AB.
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
+ * modification, are permitted provided that the following conditions are
+ * met:
  *     * Redistributions of source code must retain the above copyright
  *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Code Aurora nor
- *       the names of its contributors may be used to endorse or promote
- *       products derived from this software without specific prior written
- *       permission.
+ *     * Redistributions in binary form must reproduce the above
+ *       copyright notice, this list of conditions and the following
+ *       disclaimer in the documentation and/or other materials provided
+ *       with the distribution.
+ *     * Neither the name of Code Aurora Forum, Inc. nor the names of its
+ *       contributors may be used to endorse or promote products derived
+ *       from this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NON-INFRINGEMENT ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
- * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
+ * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+ * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
 
@@ -55,6 +57,9 @@
 
 /* clear the halt bit. */
 #define AXI_HALT_CLEAR  0x00000000
+
+/* clear axi_halt_irq */
+#define MASK_AXI_HALT_IRQ	0xFF7FFFFF
 
 /* reset the pipeline when stop command is issued.
  * (without reset the register.) bit 26-31 = 0,
@@ -112,13 +117,24 @@
 #define VFE_IRQ_STATUS0_STATS_CS      0x20000  /* bit 17 */
 #define VFE_IRQ_STATUS0_STATS_IHIST   0x40000  /* bit 18 */
 
+#define VFE_IRQ_STATUS0_SYNC_TIMER0   0x2000000  /* bit 25 */
+#define VFE_IRQ_STATUS0_SYNC_TIMER1   0x4000000  /* bit 26 */
+#define VFE_IRQ_STATUS0_SYNC_TIMER2   0x8000000  /* bit 27 */
+#define VFE_IRQ_STATUS0_ASYNC_TIMER0  0x10000000  /* bit 28 */
+#define VFE_IRQ_STATUS0_ASYNC_TIMER1  0x20000000  /* bit 29 */
+#define VFE_IRQ_STATUS0_ASYNC_TIMER2  0x40000000  /* bit 30 */
+#define VFE_IRQ_STATUS0_ASYNC_TIMER3  0x80000000  /* bit 31 */
+
 /* imask for while waiting for stop ack,  driver has already
  * requested stop, waiting for reset irq, and async timer irq.
  * For irq_status_0, bit 28-31 are for async timer. For
  * irq_status_1, bit 22 for reset irq, bit 23 for axi_halt_ack
    irq */
 #define VFE_IMASK_WHILE_STOPPING_0  0xF0000000
-#define VFE_IMASK_WHILE_STOPPING_1  0x00400000
+#define VFE_IMASK_WHILE_STOPPING_1  0x00C00000
+#define VFE_IMASK_RESET             0x00400000
+#define VFE_IMASK_AXI_HALT          0x00800000
+
 
 /* no error irq in mask 0 */
 #define VFE_IMASK_ERROR_ONLY_0  0x0
@@ -144,6 +160,7 @@
 #define IHIST_ENABLE_MASK 0x00008000   /* bit 15 */
 #define RS_ENABLE_MASK 0x00000100      /* bit 8  */
 #define CS_ENABLE_MASK 0x00000200      /* bit 9  */
+#define RS_CS_ENABLE_MASK 0x00000300   /* bit 8,9  */
 
 
 #define VFE_REG_UPDATE_TRIGGER           1
@@ -164,15 +181,11 @@ enum VFE31_DMI_RAM_SEL {
 	 RGBLUT_RAM_CH1_BANK1     = 0x5,
 	 RGBLUT_RAM_CH2_BANK0     = 0x6,
 	 RGBLUT_RAM_CH2_BANK1     = 0x7,
-	 STATS_HIST_CB_EVEN_RAM   = 0x8,
-	 STATS_HIST_CB_ODD_RAM    = 0x9,
-	 STATS_HIST_CR_EVEN_RAM   = 0xa,
-	 STATS_HIST_CR_ODD_RAM    = 0xb,
-	 RGBLUT_CHX_BANK0         = 0xc,
-	 RGBLUT_CHX_BANK1         = 0xd,
-	 LUMA_ADAPT_LUT_RAM_BANK0 = 0xe,
-	 LUMA_ADAPT_LUT_RAM_BANK1 = 0xf
-
+	 STATS_HIST_RAM           = 0x8,
+	 RGBLUT_CHX_BANK0         = 0x9,
+	 RGBLUT_CHX_BANK1         = 0xa,
+	 LUMA_ADAPT_LUT_RAM_BANK0 = 0xb,
+	 LUMA_ADAPT_LUT_RAM_BANK1 = 0xc
 };
 
 enum  VFE_STATE {
@@ -286,6 +299,10 @@ enum  VFE_STATE {
 #define V31_DUMMY_10              103
 #define V31_SYNC_TIMER_SETTING    104
 #define V31_ASYNC_TIMER_SETTING   105
+#define V31_LIVESHOT              106
+#ifdef CONFIG_MACH_SEMC_ZEUS
+#define V31_START_RAW_CAPTURE	  107
+#endif /* CONFIG_MACH_SEMC_ZEUS */
 #define V31_CAMIF_OFF             0x000001E4
 #define V31_CAMIF_LEN             32
 
@@ -330,6 +347,14 @@ enum  VFE_STATE {
 #define V31_CHROMA_EN_OFF 0x000003C4
 #define V31_CHROMA_EN_LEN 36
 
+#define V31_SYNC_TIMER_OFF      0x0000020C
+#define V31_SYNC_TIMER_POLARITY_OFF 0x00000234
+#define V31_TIMER_SELECT_OFF        0x0000025C
+#define V31_SYNC_TIMER_LEN 28
+
+#define V31_ASYNC_TIMER_OFF 0x00000238
+#define V31_ASYNC_TIMER_LEN 28
+
 #define V31_BLACK_LEVEL_OFF 0x00000264
 #define V31_BLACK_LEVEL_LEN 16
 
@@ -347,6 +372,9 @@ enum  VFE_STATE {
 
 #define V31_LA_OFF 0x000003C0
 #define V31_LA_LEN 4
+
+#define V31_SCE_OFF 0x00000418
+#define V31_SCE_LEN 136
 
 #define V31_CHROMA_SUP_OFF 0x000003E8
 #define V31_CHROMA_SUP_LEN 12
@@ -604,7 +632,8 @@ struct vfe_cmd_color_correction_config {
 	int16_t  K2;
 };
 
-#define VFE_LA_TABLE_LENGTH 256
+#define VFE_LA_TABLE_LENGTH 64
+
 struct vfe_cmd_la_config {
 	uint8_t enable;
 	int16_t table[VFE_LA_TABLE_LENGTH];
@@ -710,25 +739,6 @@ struct vfe_cmd_bus_pm_start {
 	uint8_t output1CbcrWrPmEnable;
 };
 
-struct vfe_cmd_sync_timer_setting {
-	uint8_t  whichSyncTimer;
-	uint8_t  operation;
-	uint8_t  polarity;
-	uint16_t repeatCount;
-	uint16_t hsyncCount;
-	uint32_t pclkCount;
-	uint32_t outputDuration;
-};
-
-struct vfe_cmd_async_timer_setting {
-	uint8_t  whichAsyncTimer;
-	uint8_t  operation;
-	uint8_t  polarity;
-	uint16_t repeatCount;
-	uint16_t inactiveCount;
-	uint32_t activeCount;
-};
-
 struct  vfe_frame_skip_counts {
 	uint32_t  totalFrameCount;
 	uint32_t  output1Count;
@@ -747,7 +757,7 @@ enum VFE_AXI_RD_UNPACK_HBI_SEL {
 };
 
 enum VFE31_MESSAGE_ID {
-	MSG_ID_RESET_ACK,
+	MSG_ID_RESET_ACK, /* 0 */
 	MSG_ID_START_ACK,
 	MSG_ID_STOP_ACK,
 	MSG_ID_UPDATE_ACK,
@@ -757,8 +767,8 @@ enum VFE31_MESSAGE_ID {
 	MSG_ID_OUTPUT_V,
 	MSG_ID_SNAPSHOT_DONE,
 	MSG_ID_STATS_AEC,
-	MSG_ID_STATS_AF,
-	MSG_ID_STATS_AWB, /* 8 */
+	MSG_ID_STATS_AF, /* 10 */
+	MSG_ID_STATS_AWB,
 	MSG_ID_STATS_RS,
 	MSG_ID_STATS_CS,
 	MSG_ID_STATS_IHIST,
@@ -767,7 +777,7 @@ enum VFE31_MESSAGE_ID {
 	MSG_ID_EPOCH2,
 	MSG_ID_SYNC_TIMER0_DONE,
 	MSG_ID_SYNC_TIMER1_DONE,
-	MSG_ID_SYNC_TIMER2_DONE,
+	MSG_ID_SYNC_TIMER2_DONE, /* 20 */
 	MSG_ID_ASYNC_TIMER0_DONE,
 	MSG_ID_ASYNC_TIMER1_DONE,
 	MSG_ID_ASYNC_TIMER2_DONE,
@@ -777,13 +787,14 @@ enum VFE31_MESSAGE_ID {
 	MSG_ID_AWB_OVERFLOW,
 	MSG_ID_RS_OVERFLOW,
 	MSG_ID_CS_OVERFLOW,
-	MSG_ID_IHIST_OVERFLOW,
+	MSG_ID_IHIST_OVERFLOW, /* 30 */
 	MSG_ID_SKIN_OVERFLOW,
 	MSG_ID_AXI_ERROR,
 	MSG_ID_CAMIF_OVERFLOW,
 	MSG_ID_VIOLATION,
 	MSG_ID_CAMIF_ERROR,
 	MSG_ID_BUS_OVERFLOW,
+	MSG_ID_SOF_ACK,
 };
 
 struct vfe_msg_stats{
@@ -874,7 +885,29 @@ struct vfe31_output_ch {
 #define VFE31_IMASK_ERROR_ONLY_0  0x0
 /* when normal case, don't want to block error status. */
 /* bit 0-21 are error irq bits */
-#define VFE31_IMASK_ERROR_ONLY_1  0x003fffff
+#define VFE31_IMASK_ERROR_ONLY_1               0x003FFFFF
+#define VFE31_IMASK_CAMIF_ERROR               (0x00000001<<0)
+#define VFE31_IMASK_STATS_CS_OVWR             (0x00000001<<1)
+#define VFE31_IMASK_STATS_IHIST_OVWR          (0x00000001<<2)
+#define VFE31_IMASK_REALIGN_BUF_Y_OVFL        (0x00000001<<3)
+#define VFE31_IMASK_REALIGN_BUF_CB_OVFL       (0x00000001<<4)
+#define VFE31_IMASK_REALIGN_BUF_CR_OVFL       (0x00000001<<5)
+#define VFE31_IMASK_VIOLATION                 (0x00000001<<6)
+#define VFE31_IMASK_IMG_MAST_0_BUS_OVFL       (0x00000001<<7)
+#define VFE31_IMASK_IMG_MAST_1_BUS_OVFL       (0x00000001<<8)
+#define VFE31_IMASK_IMG_MAST_2_BUS_OVFL       (0x00000001<<9)
+#define VFE31_IMASK_IMG_MAST_3_BUS_OVFL       (0x00000001<<10)
+#define VFE31_IMASK_IMG_MAST_4_BUS_OVFL       (0x00000001<<11)
+#define VFE31_IMASK_IMG_MAST_5_BUS_OVFL       (0x00000001<<12)
+#define VFE31_IMASK_IMG_MAST_6_BUS_OVFL       (0x00000001<<13)
+#define VFE31_IMASK_STATS_AE_BUS_OVFL         (0x00000001<<14)
+#define VFE31_IMASK_STATS_AF_BUS_OVFL         (0x00000001<<15)
+#define VFE31_IMASK_STATS_AWB_BUS_OVFL        (0x00000001<<16)
+#define VFE31_IMASK_STATS_RS_BUS_OVFL         (0x00000001<<17)
+#define VFE31_IMASK_STATS_CS_BUS_OVFL         (0x00000001<<18)
+#define VFE31_IMASK_STATS_IHIST_BUS_OVFL      (0x00000001<<19)
+#define VFE31_IMASK_STATS_SKIN_BUS_OVFL       (0x00000001<<20)
+#define VFE31_IMASK_AXI_ERROR                 (0x00000001<<21)
 
 struct vfe31_output_path {
 	uint16_t output_mode;     /* bitmask  */
@@ -977,9 +1010,7 @@ struct vfe31_ctrl_type {
 
 	uint32_t vfeImaskCompositePacked;
 
-	spinlock_t  stop_flag_lock;
 	spinlock_t  update_ack_lock;
-	spinlock_t  state_lock;
 	spinlock_t  io_lock;
 
 	spinlock_t  aec_ack_lock;
@@ -991,7 +1022,7 @@ struct vfe31_ctrl_type {
 	void *extdata;
 
 	int8_t start_ack_pending;
-	int8_t stop_ack_pending;
+	atomic_t stop_ack_pending;
 	int8_t reset_ack_pending;
 	int8_t update_ack_pending;
 	int8_t req_start_video_rec;
@@ -1007,8 +1038,11 @@ struct vfe31_ctrl_type {
 	struct resource *vfeio;
 
 	uint32_t stats_comp;
-	uint8_t vstate;
+	atomic_t vstate;
 	uint32_t vfe_capture_count;
+	uint32_t sync_timer_repeat_count;
+	uint32_t sync_timer_state;
+	uint32_t sync_timer_number;
 
 	uint32_t vfeFrameId;
 	uint32_t output1Pattern;

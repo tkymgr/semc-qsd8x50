@@ -137,7 +137,7 @@ mmc_blk_getgeo(struct block_device *bdev, struct hd_geometry *geo)
 	return 0;
 }
 
-static struct block_device_operations mmc_bdops = {
+static const struct block_device_operations mmc_bdops = {
 	.open			= mmc_blk_open,
 	.release		= mmc_blk_release,
 	.getgeo			= mmc_blk_getgeo,
@@ -292,7 +292,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		brq.mrq.cmd = &brq.cmd;
 		brq.mrq.data = &brq.data;
 
-		brq.cmd.arg = req->sector;
+		brq.cmd.arg = blk_rq_pos(req);
 		if (!mmc_card_blockaddr(card))
 			brq.cmd.arg <<= 9;
 		brq.cmd.flags = MMC_RSP_SPI_R1 | MMC_RSP_R1 | MMC_CMD_ADTC;
@@ -300,7 +300,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		brq.stop.opcode = MMC_STOP_TRANSMISSION;
 		brq.stop.arg = 0;
 		brq.stop.flags = MMC_RSP_SPI_R1B | MMC_RSP_R1B | MMC_CMD_AC;
-		brq.data.blocks = req->nr_sectors;
+		brq.data.blocks = blk_rq_sectors(req);
 
 		/*
 		 * The block layer doesn't support all sector count
@@ -350,7 +350,7 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 		 * Adjust the sg list so it is the same size as the
 		 * request.
 		 */
-		if (brq.data.blocks != req->nr_sectors) {
+		if (brq.data.blocks != blk_rq_sectors(req)) {
 			int i, data_size = brq.data.blocks << 9;
 			struct scatterlist *sg;
 
@@ -403,8 +403,8 @@ static int mmc_blk_issue_rq(struct mmc_queue *mq, struct request *req)
 			printk(KERN_ERR "%s: error %d transferring data,"
 			       " sector %u, nr %u, card status %#x\n",
 			       req->rq_disk->disk_name, brq.data.error,
-			       (unsigned)req->sector,
-			       (unsigned)req->nr_sectors, status);
+			       (unsigned)blk_rq_pos(req),
+			       (unsigned)blk_rq_sectors(req), status);
 		}
 
 		if (brq.stop.error) {
@@ -572,7 +572,7 @@ static struct mmc_blk_data *mmc_blk_alloc(struct mmc_card *card)
 
 	sprintf(md->disk->disk_name, "mmcblk%d", devidx);
 
-	blk_queue_hardsect_size(md->queue.queue, 512);
+	blk_queue_logical_block_size(md->queue.queue, 512);
 
 	if (!mmc_card_sd(card) && mmc_card_blockaddr(card)) {
 		/*
@@ -674,21 +674,8 @@ static int mmc_blk_resume(struct mmc_card *card)
 	struct mmc_blk_data *md = mmc_get_drvdata(card);
 
 	if (md) {
-#ifdef CONFIG_MMC_AUTO_SUSPEND
-		/* There could be a chance where system suspend can
-		 * fail after card is suspended but before host is
-		 * suspended. But if the host is already suspended
-		 * due to auto-suspend functionality, then resume it
-		 * now.
-		 */
-		mmc_auto_suspend(card->host, 0);
-#endif
 #ifndef CONFIG_MMC_BLOCK_DEFERRED_RESUME
 		mmc_blk_set_blksize(md, card);
-#endif
-
-#ifdef CONFIG_MMC_BLOCK_PARANOID_RESUME
-		md->queue.check_status = 1;
 #endif
 		mmc_queue_resume(&md->queue);
 	}

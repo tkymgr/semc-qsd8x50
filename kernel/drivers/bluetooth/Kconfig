@@ -108,8 +108,8 @@ config BT_MSM_SLEEP
 	depends on BT && SERIAL_MSM_HS
 	default n
 	help
-	Bluetooth MSM bluesleep  driver.
-	This driver provides support for BTS sleep.
+	  Bluetooth MSM bluesleep driver.
+	  This driver provides support for BTS sleep.
 
 config BT_HCIBFUSB
 	tristate "HCI BlueFRITZ! USB driver"
@@ -189,6 +189,31 @@ config BT_HCIVHCI
 	  Say Y here to compile support for virtual HCI devices into the
 	  kernel or say M to compile it as module (hci_vhci).
 
+config BT_MRVL
+	tristate "Marvell Bluetooth driver support"
+	help
+	  The core driver to support Marvell Bluetooth devices.
+
+	  This driver is required if you want to support
+	  Marvell Bluetooth devices, such as 8688.
+
+	  Say Y here to compile Marvell Bluetooth driver
+	  into the kernel or say M to compile it as module.
+
+config BT_MRVL_SDIO
+	tristate "Marvell BT-over-SDIO driver"
+	depends on BT_MRVL && MMC
+	select FW_LOADER
+	help
+	  The driver for Marvell Bluetooth chipsets with SDIO interface.
+
+	  This driver is required if you want to use Marvell Bluetooth
+	  devices with SDIO interface. Currently only SD8688 chipset is
+	  supported.
+
+	  Say Y here to compile support for Marvell BT-over-SDIO driver
+	  into the kernel or say M to compile it as module.
+
 config MSM_BT_POWER
 	tristate "MSM Bluetooth Power Control"
 	depends on ARCH_MSM && RFKILL
@@ -196,6 +221,16 @@ config MSM_BT_POWER
 	help
 	  Provides a parameter to switch on/off power from PMIC
 	  to Bluetooth device.
+
+config SEMC_BT_ZEUS
+	bool "SEMC Zeus BT device"
+	depends on MACH_SEMC_ZEUS
+	default y
+	select BT_HCIUART_H4
+	select BT_HCIUART_LL
+	help
+	  This sets up support (power, GPIO muxing, serial port)
+	  for BT on the SEMC ZEUS device
 
 endmenu
 

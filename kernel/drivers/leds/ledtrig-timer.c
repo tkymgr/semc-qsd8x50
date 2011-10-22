@@ -166,7 +166,7 @@ static void timer_trig_activate(struct led_classdev *led_cdev)
 
 	timer_data->brightness_on = led_get_brightness(led_cdev);
 	if (timer_data->brightness_on == LED_OFF)
-		timer_data->brightness_on = LED_FULL;
+		timer_data->brightness_on = led_cdev->max_brightness;
 	led_cdev->trigger_data = timer_data;
 
 	init_timer(&timer_data->timer);
@@ -179,6 +179,8 @@ static void timer_trig_activate(struct led_classdev *led_cdev)
 	rc = device_create_file(led_cdev->dev, &dev_attr_delay_off);
 	if (rc)
 		goto err_out_delayon;
+
+	kobject_uevent(&led_cdev->dev->kobj, KOBJ_ADD);
 
 	/* If there is hardware support for blinking, start one
 	 * user friendly blink rate chosen by the driver.
@@ -207,6 +209,7 @@ static void timer_trig_deactivate(struct led_classdev *led_cdev)
 		del_timer_sync(&timer_data->timer);
 		kfree(timer_data);
 	}
+	kobject_uevent(&led_cdev->dev->kobj, KOBJ_REMOVE);
 
 	/* If there is hardware support for blinking, stop it */
 	if (led_cdev->blink_set)

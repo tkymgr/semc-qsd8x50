@@ -1,57 +1,18 @@
-/* Copyright (c) 2009, Code Aurora Forum. All rights reserved.
+/* Copyright (c) 2009-2010, Code Aurora Forum. All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright
- *       notice, this list of conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright
- *       notice, this list of conditions and the following disclaimer in the
- *       documentation and/or other materials provided with the distribution.
- *     * Neither the name of Code Aurora Forum nor
- *       the names of its contributors may be used to endorse or promote
- *       products derived from this software without specific prior written
- *       permission.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
  *
- * Alternatively, provided that this notice is retained in full, this software
- * may be relicensed by the recipient under the terms of the GNU General Public
- * License version 2 ("GPL") and only version 2, in which case the provisions of
- * the GPL apply INSTEAD OF those given above.  If the recipient relicenses the
- * software under the GPL, then the identification text in the MODULE_LICENSE
- * macro must be changed to reflect "GPLv2" instead of "Dual BSD/GPL".  Once a
- * recipient changes the license terms to the GPL, subsequent recipients shall
- * not relicense under alternate licensing terms, including the BSD or dual
- * BSD/GPL terms.  In addition, the following license statement immediately
- * below and between the words START and END shall also then apply when this
- * software is relicensed under the GPL:
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
- * START
- *
- * This program is free software; you can redistribute it and/or modify it under
- * the terms of the GNU General Public License version 2 and only version 2 as
- * published by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
- * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
- * details.
- *
- * You should have received a copy of the GNU General Public License along with
- * this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
- *
- * END
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+ * 02110-1301, USA.
  *
  */
 
@@ -63,14 +24,26 @@
 #include <linux/bitops.h>
 #include <linux/mfd/pmic8058.h>
 #include <linux/delay.h>
+#include <linux/mutex.h>
+#include <linux/pm.h>
+#include <linux/pm_runtime.h>
 
-#include <mach/pmic8058-keypad.h>
+#include <linux/input/pmic8058-keypad.h>
 
-#define MATRIX_MIN_ROWS		5
-#define MATRIX_MIN_COLS		5
+#define PM8058_MAX_ROWS		18
+#define PM8058_MAX_COLS		8
+#define PM8058_ROW_SHIFT	3
+#define PM8058_MATRIX_MAX_SIZE	(PM8058_MAX_ROWS * PM8058_MAX_COLS)
+
+#define PM8058_MIN_ROWS		5
+#define PM8058_MIN_COLS		5
 
 #define MAX_SCAN_DELAY		128
 #define MIN_SCAN_DELAY		1
+
+/* in nanoseconds */
+#define MAX_ROW_HOLD_DELAY	122000
+#define MIN_ROW_HOLD_DELAY	30500
 
 #define MAX_DEBOUNCE_B0_TIME	20
 #define MIN_DEBOUNCE_B0_TIME	5
@@ -122,6 +95,7 @@
 /* Internal flags */
 #define KEYF_FIX_LAST_ROW		0x01
 
+
 /* ---------------------------------------------------------------------*/
 struct pmic8058_kp {
 	const struct pmic8058_keypad_data *pdata;
@@ -132,11 +106,18 @@ struct pmic8058_kp {
 	unsigned short *keycodes;
 
 	struct device *dev;
-	u16 keystate[MATRIX_MAX_ROWS];
-	u16 stuckstate[MATRIX_MAX_ROWS];
+	u16 keystate[PM8058_MAX_ROWS];
+	u16 stuckstate[PM8058_MAX_ROWS];
 
 	u32	flags;
 	struct pm8058_chip	*pm_chip;
+
+	/* protect read/write */
+	struct mutex		mutex;
+	bool			user_disabled;
+	u32			disable_depth;
+
+	u8			ctrl_reg;
 };
 
 static int pmic8058_kp_write_u8(struct pmic8058_kp *kp,
@@ -223,7 +204,18 @@ static int pmic8058_chk_read_state(struct pmic8058_kp *kp, u16 data_reg)
 
 	return 0;
 }
-
+/*
+ * Synchronous read protocol for RevB0 onwards:
+ *
+ * 1. Write '1' to ReadState bit in KEYP_SCAN register
+ * 2. Wait 2*32KHz clocks, so that HW can successfully enter read mode
+ *    synchronously
+ * 3. Read rows in old array first if events are more than one
+ * 4. Read rows in recent array
+ * 5. Wait 4*32KHz clocks
+ * 6. Write '0' to ReadState bit of KEYP_SCAN register so that hw can
+ *    synchronously exit read mode.
+ */
 static int pmic8058_chk_sync_read(struct pmic8058_kp *kp)
 {
 	int rc;
@@ -243,15 +235,12 @@ static int pmic8058_kp_read_data(struct pmic8058_kp *kp, u16 *state,
 					u16 data_reg, int read_rows)
 {
 	int rc, row;
-	u8 new_data[MATRIX_MAX_ROWS];
-
-	if (pm8058_rev_is_b0(kp->pm_chip))
-		pmic8058_chk_sync_read(kp);
+	u8 new_data[PM8058_MAX_ROWS];
 
 	rc = pmic8058_kp_read(kp, new_data, data_reg, read_rows);
 
 	if (!rc) {
-		if (pm8058_rev_is_a0(kp->pm_chip))
+		if (pm8058_rev(kp->pm_chip) == PM_8058_REV_1p0)
 			pmic8058_chk_read_state(kp, data_reg);
 		for (row = 0; row < kp->pdata->num_rows; row++) {
 			dev_dbg(kp->dev, "new_data[%d] = %d\n", row,
@@ -273,11 +262,14 @@ static int pmic8058_kp_read_matrix(struct pmic8058_kp *kp, u16 *new_state,
 	};
 
 	if (kp->flags & KEYF_FIX_LAST_ROW &&
-			(kp->pdata->num_rows != MATRIX_MAX_ROWS))
+			(kp->pdata->num_rows != PM8058_MAX_ROWS))
 		read_rows = rows[kp->pdata->num_rows - KEYP_CTRL_SCAN_ROWS_MIN
 					 + 1];
 	else
 		read_rows = kp->pdata->num_rows;
+
+	if (pm8058_rev(kp->pm_chip) > PM_8058_REV_1p0)
+		pmic8058_chk_sync_read(kp);
 
 	if (old_state)
 		rc = pmic8058_kp_read_data(kp, old_state, KEYP_OLD_DATA,
@@ -286,7 +278,7 @@ static int pmic8058_kp_read_matrix(struct pmic8058_kp *kp, u16 *new_state,
 	rc = pmic8058_kp_read_data(kp, new_state, KEYP_RECENT_DATA,
 					 read_rows);
 
-	if (pm8058_rev_is_b0(kp->pm_chip)) {
+	if (pm8058_rev(kp->pm_chip) > PM_8058_REV_1p0) {
 		/* 4 * 32KHz clocks */
 		udelay((4 * USEC_PER_SEC / KEYP_CLOCK_FREQ) + 1);
 
@@ -317,7 +309,7 @@ static int __pmic8058_kp_scan_matrix(struct pmic8058_kp *kp, u16 *new_state,
 					!(new_state[row] & (1 << col)) ?
 					"pressed" : "released");
 
-			code = (row << 3) + col;
+			code = MATRIX_SCAN_CODE(row, col, PM8058_ROW_SHIFT);
 			input_event(kp->input, EV_MSC, MSC_SCAN, code);
 			input_report_key(kp->input,
 					kp->keycodes[code],
@@ -330,15 +322,43 @@ static int __pmic8058_kp_scan_matrix(struct pmic8058_kp *kp, u16 *new_state,
 	return 0;
 }
 
+static int pmic8058_detect_ghost_keys(struct pmic8058_kp *kp, u16 *new_state)
+{
+#ifdef CONFIG_KEYBOARD_PMIC8058_GHOST_DETECTION
+	int row, found_first = -1;
+	u16 check, row_state;
+
+	check = 0;
+	for (row = 0; row < kp->pdata->num_rows; row++) {
+		row_state = (~new_state[row]) &
+				 ((1 << kp->pdata->num_cols) - 1);
+
+		if (hweight16(row_state) > 1) {
+			if (found_first == -1)
+				found_first = row;
+			if (check & row_state) {
+				dev_dbg(kp->dev, "detected ghost key on row[%d]"
+						 "row[%d]\n", found_first, row);
+				return 1;
+			}
+		}
+		check |= row_state;
+	}
+#endif
+	return 0;
+}
+
 static int pmic8058_kp_scan_matrix(struct pmic8058_kp *kp, unsigned int events)
 {
-	u16 new_state[MATRIX_MAX_ROWS];
-	u16 old_state[MATRIX_MAX_ROWS];
+	u16 new_state[PM8058_MAX_ROWS];
+	u16 old_state[PM8058_MAX_ROWS];
 	int rc;
 
 	switch (events) {
 	case 0x1:
 		rc = pmic8058_kp_read_matrix(kp, new_state, NULL);
+		if (pmic8058_detect_ghost_keys(kp, new_state))
+			return -EINVAL;
 		__pmic8058_kp_scan_matrix(kp, new_state, kp->keystate);
 		memcpy(kp->keystate, new_state, sizeof(new_state));
 	break;
@@ -360,6 +380,82 @@ static int pmic8058_kp_scan_matrix(struct pmic8058_kp *kp, unsigned int events)
 	}
 	return rc;
 }
+
+static inline int pmic8058_kp_disabled(struct pmic8058_kp *kp)
+{
+	return kp->disable_depth != 0;
+}
+
+static void pmic8058_kp_enable(struct pmic8058_kp *kp)
+{
+	if (!pmic8058_kp_disabled(kp))
+		return;
+
+	if (--kp->disable_depth == 0) {
+
+		kp->ctrl_reg |= KEYP_CTRL_KEYP_EN;
+		pmic8058_kp_write_u8(kp, kp->ctrl_reg, KEYP_CTRL);
+
+		enable_irq(kp->key_sense_irq);
+		enable_irq(kp->key_stuck_irq);
+	}
+}
+
+static void pmic8058_kp_disable(struct pmic8058_kp *kp)
+{
+	if (kp->disable_depth++ == 0) {
+		disable_irq(kp->key_sense_irq);
+		disable_irq(kp->key_stuck_irq);
+
+		kp->ctrl_reg &= ~KEYP_CTRL_KEYP_EN;
+		pmic8058_kp_write_u8(kp, kp->ctrl_reg, KEYP_CTRL);
+	}
+}
+
+static ssize_t pmic8058_kp_disable_show(struct device *dev,
+					struct device_attribute *attr,
+					char *buf)
+{
+	struct pmic8058_kp *kp = dev_get_drvdata(dev);
+
+	return sprintf(buf, "%u\n", pmic8058_kp_disabled(kp));
+}
+
+static ssize_t pmic8058_kp_disable_store(struct device *dev,
+					struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct pmic8058_kp *kp = dev_get_drvdata(dev);
+	long i = 0;
+	int rc;
+
+	rc = strict_strtoul(buf, 10, &i);
+	if (rc)
+		return -EINVAL;
+
+	i = !!i;
+
+	mutex_lock(&kp->mutex);
+	if (i == kp->user_disabled) {
+		mutex_unlock(&kp->mutex);
+		return count;
+	}
+
+	kp->user_disabled = i;
+
+	if (i)
+		pmic8058_kp_disable(kp);
+	else
+		pmic8058_kp_enable(kp);
+	mutex_unlock(&kp->mutex);
+
+	return count;
+}
+
+static DEVICE_ATTR(disable_kp, 0664, pmic8058_kp_disable_show,
+			pmic8058_kp_disable_store);
+
+
 /*
  * NOTE: We are reading recent and old data registers blindly
  * whenever key-stuck interrupt happens, because events counter doesn't
@@ -373,8 +469,8 @@ static int pmic8058_kp_scan_matrix(struct pmic8058_kp *kp, unsigned int events)
  */
 static irqreturn_t pmic8058_kp_stuck_irq(int irq, void *data)
 {
-	u16 new_state[MATRIX_MAX_ROWS];
-	u16 old_state[MATRIX_MAX_ROWS];
+	u16 new_state[PM8058_MAX_ROWS];
+	u16 old_state[PM8058_MAX_ROWS];
 	int rc;
 	struct pmic8058_kp *kp = data;
 
@@ -400,7 +496,7 @@ static irqreturn_t pmic8058_kp_irq(int irq, void *data)
 	u8 ctrl_val, events;
 	int rc;
 
-	if (pm8058_rev_is_a0(kp->pm_chip))
+	if (pm8058_rev(kp->pm_chip) == PM_8058_REV_1p0)
 		mdelay(1);
 
 	dev_dbg(kp->dev, "key sense irq\n");
@@ -442,14 +538,14 @@ static int pmic8058_kpd_init(struct pmic8058_kp *kp)
 	/* Find row bits */
 	if (kp->pdata->num_rows < KEYP_CTRL_SCAN_ROWS_MIN)
 		bits = 0;
-	else if (kp->pdata->num_rows > MATRIX_MAX_ROWS)
+	else if (kp->pdata->num_rows > PM8058_MAX_ROWS)
 		bits = KEYP_CTRL_SCAN_ROWS_BITS;
 	else
 		bits = row_bits[kp->pdata->num_rows - KEYP_CTRL_SCAN_ROWS_MIN];
 
 	/* Use max rows to fix last row problem if actual rows are less */
 	if (kp->flags & KEYF_FIX_LAST_ROW &&
-			 (kp->pdata->num_rows != MATRIX_MAX_ROWS))
+			 (kp->pdata->num_rows != PM8058_MAX_ROWS))
 		bits = row_bits[kp->pdata->num_rows - KEYP_CTRL_SCAN_ROWS_MIN
 					 + 1];
 
@@ -457,10 +553,10 @@ static int pmic8058_kpd_init(struct pmic8058_kp *kp)
 
 	rc = pmic8058_kp_write_u8(kp, ctrl_val, KEYP_CTRL);
 
-	if (pm8058_rev_is_a0(kp->pm_chip))
+	if (pm8058_rev(kp->pm_chip) == PM_8058_REV_1p0)
 		bits = fls(kp->pdata->debounce_ms[0]) - 1;
 	else
-		bits = kp->pdata->debounce_ms[1] / 5;
+		bits = (kp->pdata->debounce_ms[1] / 5) - 1;
 
 	scan_val |= (bits << KEYP_SCAN_DBOUNCE_SHIFT);
 
@@ -468,45 +564,70 @@ static int pmic8058_kpd_init(struct pmic8058_kp *kp)
 	scan_val |= (bits << KEYP_SCAN_PAUSE_SHIFT);
 
 	/* Row hold time is a multiple of 32KHz cycles. */
-	cycles = kp->pdata->row_hold_us * KEYP_CLOCK_FREQ / USEC_PER_SEC;
-	bits = 3; /* Max : b11 */
-	while (bits) {
-		if (cycles >= (2 << bits))
-			break;
+	cycles = (kp->pdata->row_hold_ns * KEYP_CLOCK_FREQ) / NSEC_PER_SEC;
 
-		bits--;
-	}
-	scan_val |= (bits << KEYP_SCAN_ROW_HOLD_SHIFT);
+	scan_val |= (cycles << KEYP_SCAN_ROW_HOLD_SHIFT);
 
 	rc = pmic8058_kp_write_u8(kp, scan_val, KEYP_SCAN);
 
 	return rc;
 }
 
-#ifdef CONFIG_PM
-static int pmic8058_kp_suspend(struct platform_device *pdev, pm_message_t msg)
+static int pm8058_kp_config_drv(int gpio_start, int num_gpios)
 {
-	struct pmic8058_kp *kp = platform_get_drvdata(pdev);
+	int	rc;
+	struct pm8058_gpio kypd_drv = {
+		.direction	= PM_GPIO_DIR_OUT,
+		.output_buffer	= PM_GPIO_OUT_BUF_OPEN_DRAIN,
+		.output_value	= 0,
+		.pull		= PM_GPIO_PULL_NO,
+		.vin_sel	= 2,
+		.out_strength	= PM_GPIO_STRENGTH_LOW,
+		.function	= PM_GPIO_FUNC_1,
+		.inv_int_pol	= 1,
+	};
 
-	if (device_may_wakeup(&pdev->dev))
-		enable_irq_wake(kp->key_sense_irq);
+	if (gpio_start < 0 || num_gpios < 0 || num_gpios > PM8058_GPIOS)
+		return -EINVAL;
+
+	while (num_gpios--) {
+		rc = pm8058_gpio_config(gpio_start++, &kypd_drv);
+		if (rc) {
+			pr_err("%s: FAIL pm8058_gpio_config(): rc=%d.\n",
+				__func__, rc);
+			return rc;
+		}
+	}
 
 	return 0;
 }
 
-static int pmic8058_kp_resume(struct platform_device *pdev)
+static int pm8058_kp_config_sns(int gpio_start, int num_gpios)
 {
-	struct pmic8058_kp *kp = platform_get_drvdata(pdev);
+	int	rc;
+	struct pm8058_gpio kypd_sns = {
+		.direction	= PM_GPIO_DIR_IN,
+		.pull		= PM_GPIO_PULL_UP_31P5,
+		.vin_sel	= 2,
+		.out_strength	= PM_GPIO_STRENGTH_NO,
+		.function	= PM_GPIO_FUNC_NORMAL,
+		.inv_int_pol	= 1,
+	};
 
-	if (device_may_wakeup(&pdev->dev))
-		disable_irq_wake(kp->key_sense_irq);
+	if (gpio_start < 0 || num_gpios < 0 || num_gpios > PM8058_GPIOS)
+		return -EINVAL;
+
+	while (num_gpios--) {
+		rc = pm8058_gpio_config(gpio_start++, &kypd_sns);
+		if (rc) {
+			pr_err("%s: FAIL pm8058_gpio_config(): rc=%d.\n",
+				__func__, rc);
+			return rc;
+		}
+	}
 
 	return 0;
 }
-#else
-#define pmic8058_kp_suspend	NULL
-#define pmic8058_kp_resume	NULL
-#endif
 
 /*
  * keypad controller should be initialized in the following sequence
@@ -521,8 +642,9 @@ static int pmic8058_kp_resume(struct platform_device *pdev)
 static int __devinit pmic8058_kp_probe(struct platform_device *pdev)
 {
 	struct pmic8058_keypad_data *pdata = pdev->dev.platform_data;
+	const struct matrix_keymap_data *keymap_data;
 	struct pmic8058_kp *kp;
-	int rc, i;
+	int rc;
 	unsigned short *keycodes;
 	u8 ctrl_val;
 	struct pm8058_chip	*pm_chip;
@@ -534,11 +656,10 @@ static int __devinit pmic8058_kp_probe(struct platform_device *pdev)
 	}
 
 	if (!pdata || !pdata->num_cols || !pdata->num_rows ||
-		pdata->num_cols > MATRIX_MAX_COLS ||
-		pdata->num_rows > MATRIX_MAX_ROWS ||
-		pdata->num_cols < MATRIX_MIN_COLS ||
-		pdata->num_rows < MATRIX_MIN_ROWS ||
-		!pdata->keymap) {
+		pdata->num_cols > PM8058_MAX_COLS ||
+		pdata->num_rows > PM8058_MAX_ROWS ||
+		pdata->num_cols < PM8058_MIN_COLS ||
+		pdata->num_rows < PM8058_MIN_ROWS) {
 		dev_err(&pdev->dev, "invalid platform data\n");
 		return -EINVAL;
 	}
@@ -555,7 +676,14 @@ static int __devinit pmic8058_kp_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	if (pm8058_rev_is_a0(pm_chip)) {
+	if (!pdata->row_hold_ns || pdata->row_hold_ns > MAX_ROW_HOLD_DELAY
+		|| pdata->row_hold_ns < MIN_ROW_HOLD_DELAY ||
+		((pdata->row_hold_ns % MIN_ROW_HOLD_DELAY) != 0)) {
+		dev_err(&pdev->dev, "invalid keypad row hold time supplied\n");
+		return -EINVAL;
+	}
+
+	if (pm8058_rev(pm_chip) == PM_8058_REV_1p0) {
 		if (!pdata->debounce_ms
 			|| !is_power_of_2(pdata->debounce_ms[0])
 			|| pdata->debounce_ms[0] > MAX_DEBOUNCE_A0_TIME
@@ -573,24 +701,33 @@ static int __devinit pmic8058_kp_probe(struct platform_device *pdev)
 		}
 	}
 
+	keymap_data = pdata->keymap_data;
+	if (!keymap_data) {
+		dev_err(&pdev->dev, "no keymap data supplied\n");
+		return -EINVAL;
+	}
+
 	kp = kzalloc(sizeof(*kp), GFP_KERNEL);
 	if (!kp)
 		return -ENOMEM;
 
-	keycodes = kzalloc(MATRIX_MAX_SIZE * sizeof(keycodes), GFP_KERNEL);
+	keycodes = kzalloc(PM8058_MATRIX_MAX_SIZE * sizeof(*keycodes),
+				 GFP_KERNEL);
 	if (!keycodes) {
 		rc = -ENOMEM;
 		goto err_alloc_mem;
 	}
 
 	platform_set_drvdata(pdev, kp);
+	mutex_init(&kp->mutex);
 
 	kp->pdata	= pdata;
 	kp->dev		= &pdev->dev;
 	kp->keycodes	= keycodes;
 	kp->pm_chip	= pm_chip;
 
-	if (pm8058_rev_is_a0(pm_chip))
+	if (pm8058_rev(pm_chip) == PM_8058_REV_1p0
+		|| pm8058_rev(pm_chip) == PM_8058_REV_2p1)
 		kp->flags |= KEYF_FIX_LAST_ROW;
 
 	kp->input = input_allocate_device();
@@ -599,6 +736,12 @@ static int __devinit pmic8058_kp_probe(struct platform_device *pdev)
 		rc = -ENOMEM;
 		goto err_alloc_device;
 	}
+
+	/* Enable runtime PM ops, start in ACTIVE mode */
+	rc = pm_runtime_set_active(&pdev->dev);
+	if (rc < 0)
+		dev_dbg(&pdev->dev, "unable to set runtime pm state\n");
+	pm_runtime_enable(&pdev->dev);
 
 	kp->key_sense_irq = platform_get_irq(pdev, 0);
 	if (kp->key_sense_irq < 0) {
@@ -637,19 +780,11 @@ static int __devinit pmic8058_kp_probe(struct platform_device *pdev)
 		__set_bit(EV_REP, kp->input->evbit);
 
 	kp->input->keycode	= keycodes;
-	kp->input->keycodemax	= MATRIX_MAX_SIZE;
+	kp->input->keycodemax	= PM8058_MATRIX_MAX_SIZE;
 	kp->input->keycodesize	= sizeof(*keycodes);
 
-	/* build keycodes for faster scanning */
-	for (i = 0; i < pdata->keymap_size; i++) {
-		unsigned int row = KEY_ROW(pdata->keymap[i]);
-		unsigned int col = KEY_COL(pdata->keymap[i]);
-		unsigned short keycode = KEY_VAL(pdata->keymap[i]);
-
-		keycodes[(row << 3) + col] = keycode;
-		__set_bit(keycode, kp->input->keybit);
-	}
-	__clear_bit(KEY_RESERVED, kp->input->keybit);
+	matrix_keypad_build_keymap(keymap_data, PM8058_ROW_SHIFT,
+					kp->input->keycode, kp->input->keybit);
 
 	input_set_capability(kp->input, EV_MSC, MSC_SCAN);
 	input_set_drvdata(kp->input, kp);
@@ -670,44 +805,53 @@ static int __devinit pmic8058_kp_probe(struct platform_device *pdev)
 		goto err_kpd_init;
 	}
 
-	rc = pm8058_gpio_config_kypd_sns(pdata->cols_gpio_start,
-						 pdata->num_cols);
+	rc = pm8058_kp_config_sns(pdata->cols_gpio_start,
+			pdata->num_cols);
 	if (rc < 0) {
 		dev_err(&pdev->dev, "unable to configure keypad sense lines\n");
 		goto err_gpio_config;
 	}
 
-	rc = pm8058_gpio_config_kypd_drv(pdata->rows_gpio_start,
-						 pdata->num_rows);
+	rc = pm8058_kp_config_drv(pdata->rows_gpio_start,
+			pdata->num_rows);
 	if (rc < 0) {
 		dev_err(&pdev->dev, "unable to configure keypad drive lines\n");
 		goto err_gpio_config;
 	}
 
-	rc = request_irq(kp->key_sense_irq, pmic8058_kp_irq,
+	rc = request_threaded_irq(kp->key_sense_irq, NULL, pmic8058_kp_irq,
 				 IRQF_TRIGGER_RISING, "pmic-keypad", kp);
 	if (rc < 0) {
 		dev_err(&pdev->dev, "failed to request keypad sense irq\n");
 		goto err_req_sense_irq;
 	}
 
-	rc = request_irq(kp->key_stuck_irq, pmic8058_kp_stuck_irq,
-				 IRQF_TRIGGER_RISING, "pmic-keypad-stuck", kp);
+	rc = request_threaded_irq(kp->key_stuck_irq, NULL,
+				 pmic8058_kp_stuck_irq, IRQF_TRIGGER_RISING,
+				 "pmic-keypad-stuck", kp);
 	if (rc < 0) {
 		dev_err(&pdev->dev, "failed to request keypad stuck irq\n");
 		goto err_req_stuck_irq;
 	}
 
-	rc = pmic8058_kp_read(kp, &ctrl_val, KEYP_CTRL, 1);
+	rc = pmic8058_kp_read_u8(kp, &ctrl_val, KEYP_CTRL);
 	ctrl_val |= KEYP_CTRL_KEYP_EN;
 	rc = pmic8058_kp_write_u8(kp, ctrl_val, KEYP_CTRL);
 
+	kp->ctrl_reg = ctrl_val;
+
 	__dump_kp_regs(kp, "probe");
+
+	rc = device_create_file(&pdev->dev, &dev_attr_disable_kp);
+	if (rc < 0)
+		goto err_create_file;
 
 	device_init_wakeup(&pdev->dev, pdata->wakeup);
 
 	return 0;
 
+err_create_file:
+	free_irq(kp->key_stuck_irq, NULL);
 err_req_stuck_irq:
 	free_irq(kp->key_sense_irq, NULL);
 err_req_sense_irq:
@@ -716,6 +860,8 @@ err_kpd_init:
 	input_unregister_device(kp->input);
 	kp->input = NULL;
 err_get_irq:
+	pm_runtime_set_suspended(&pdev->dev);
+	pm_runtime_disable(&pdev->dev);
 	input_free_device(kp->input);
 err_alloc_device:
 	kfree(keycodes);
@@ -728,6 +874,9 @@ static int __devexit pmic8058_kp_remove(struct platform_device *pdev)
 {
 	struct pmic8058_kp *kp = platform_get_drvdata(pdev);
 
+	pm_runtime_set_suspended(&pdev->dev);
+	pm_runtime_disable(&pdev->dev);
+	device_remove_file(&pdev->dev, &dev_attr_disable_kp);
 	device_init_wakeup(&pdev->dev, 0);
 	free_irq(kp->key_stuck_irq, NULL);
 	free_irq(kp->key_sense_irq, NULL);
@@ -739,14 +888,52 @@ static int __devexit pmic8058_kp_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM
+static int pmic8058_kp_suspend(struct device *dev)
+{
+	struct pmic8058_kp *kp = dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev) && !pmic8058_kp_disabled(kp)) {
+		enable_irq_wake(kp->key_sense_irq);
+	} else {
+		mutex_lock(&kp->mutex);
+		pmic8058_kp_disable(kp);
+		mutex_unlock(&kp->mutex);
+	}
+
+	return 0;
+}
+
+static int pmic8058_kp_resume(struct device *dev)
+{
+	struct pmic8058_kp *kp = dev_get_drvdata(dev);
+
+	if (device_may_wakeup(dev) && !pmic8058_kp_disabled(kp)) {
+		disable_irq_wake(kp->key_sense_irq);
+	} else {
+		mutex_lock(&kp->mutex);
+		pmic8058_kp_enable(kp);
+		mutex_unlock(&kp->mutex);
+	}
+
+	return 0;
+}
+
+static struct dev_pm_ops pm8058_kp_pm_ops = {
+	.suspend	= pmic8058_kp_suspend,
+	.resume		= pmic8058_kp_resume,
+};
+#endif
+
 static struct platform_driver pmic8058_kp_driver = {
 	.probe		= pmic8058_kp_probe,
 	.remove		= __devexit_p(pmic8058_kp_remove),
-	.suspend	= pmic8058_kp_suspend,
-	.resume		= pmic8058_kp_resume,
 	.driver		= {
 		.name = "pm8058-keypad",
 		.owner = THIS_MODULE,
+#ifdef CONFIG_PM
+		.pm = &pm8058_kp_pm_ops,
+#endif
 	},
 };
 
@@ -762,7 +949,7 @@ static void __exit pmic8058_kp_exit(void)
 }
 module_exit(pmic8058_kp_exit);
 
-MODULE_LICENSE("Dual BSD/GPL");
+MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("PMIC8058 keypad driver");
 MODULE_VERSION("1.0");
 MODULE_ALIAS("platform:pmic8058_keypad");

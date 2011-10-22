@@ -152,35 +152,6 @@ config MACH_MSM7X27_FFA
 	help
 	  Support for the Qualcomm MSM7x27 FFA eval board.
 
-config MACH_MSM7X27_ROBYN
-	depends on ARCH_MSM7X27
-	depends on !MSM_STACKED_MEMORY
-	default n
-	select TI1271
-	bool "MSM7x27 Robyn"
-	help
-	  Support for the Robyn SEMC product using MSM7x27.
-
-config MACH_MSM7X27_MIMMI
-	depends on ARCH_MSM7X27
-	depends on !MSM_STACKED_MEMORY
-	default n
-	select SEMC_GPIO_MATRIX_DRIVER
-	select SEMC_GPIO_INPUT_DRIVER
-	select TI1271
-	bool "MSM7x27 Mimmi"
-	help
-	  Support for the Mimmi SEMC product using MSM7x27.
-
-config MACH_MSM7X27_SHAKIRA
-        depends on ARCH_MSM7X27
-        depends on !MSM_STACKED_MEMORY
-        default n
-        select TI1271
-        bool "MSM7x27 Shakira"
-        help
-          Support for the Shakira SEMC product using MSM7x27.
-
 config MACH_MSM7X30_SURF
        depends on ARCH_MSM7X30
        depends on !MSM_STACKED_MEMORY
@@ -344,15 +315,6 @@ config MACH_QSD8X50A_FFA
 	help
 	  Support for the Qualcomm QSD8x50A FFA eval board.
 
-config MACH_ES209RA
-	depends on ARCH_QSD8X50
-	depends on MSM_SOC_REV_NONE
-	depends on MSM_STACKED_MEMORY
-	default y
-	bool "QSD8x50 ES209RA (Rachael)"
-	help
-	  Support for the ES209RA (Rachael) SEMC product using QSD8x50.
-
 config MACH_QSD8X50A_ST1_5
 	depends on ARCH_QSD8X50
 	depends on MSM_SOC_REV_A
@@ -361,6 +323,15 @@ config MACH_QSD8X50A_ST1_5
 	bool "QSD8x50A ST1.5"
 	help
 	  Support for the Qualcomm ST1.5.
+
+config MACH_ES209RA
+	depends on ARCH_QSD8X50
+	depends on MSM_SOC_REV_NONE
+	depends on MSM_STACKED_MEMORY
+	default y
+	bool "QSD8x50 ES209RA (Rachael)"
+	help
+	  Support for the ES209RA (Rachael) SEMC product using QSD8x50.
 
 config MACH_MSM7X25_SURF
 	depends on ARCH_MSM7X25
@@ -442,13 +413,6 @@ config MACH_MSM8X60_FFA
 	help
 	  Support for the Qualcomm MSM8x60 FFA eval board.
 
-config QSD8X50_OVERCLOCK
-	depends on ARCH_QSD8X50
-	default n
-	bool "QSD8X50_OVERCLOCK"
-	help
-	  ebable CPU frequency Overclock mode for Qualcomm QSD8x50 board.
-
 endmenu
 
 config MSM_STACKED_MEMORY
@@ -461,11 +425,10 @@ config MSM_STACKED_MEMORY
 
 config PHYS_OFFSET
 	hex
-	default "0x00200000" if !MSM_STACKED_MEMORY && !CRASH_DUMP
-	default "0x0D200000" if !MSM_STACKED_MEMORY && ARCH_MSM7X27 && CRASH_DUMP
+	default "0x00200000" if !MSM_STACKED_MEMORY
 	default "0x00000000" if ARCH_QSD8X50 && MSM_SOC_REV_A
-	default "0x20000000" if ARCH_QSD8X50 && !CRASH_DUMP
-	default "0x37800000" if ARCH_QSD8X50 && CRASH_DUMP
+	default "0x20000000" if ARCH_QSD8X50
+	default "0x40200000" if ARCH_MSM8X60
 	default "0x10000000"
 
 config KERNEL_PMEM_EBI_REGION
@@ -541,14 +504,6 @@ choice
 	config MSM_DEBUG_UART3
 		bool "UART3"
 endchoice
-
-config CACHE_FLUSH_RANGE_LIMIT
-	hex "Cache flush range limit"
-	default 0x40000
-	help
-	  When flushing a cache range larger then this (hex) limit, flush the
-	  entire cache instead. Flushing a large range can be slower than
-	  flushing, then refilling, the entire cache.
 
 choice
 	prompt "Default Timer"
@@ -706,7 +661,7 @@ config HTC_PWRSINK
 
 config QSD_SVS
 	bool "QSD Static Voltage Scaling"
-	depends on (MACH_ES209RA || MACH_QSD8X50_SURF || MACH_QSD8X50_FFA || MACH_QSD8X50_COMET || MACH_QSD8X50A_SURF || MACH_QSD8X50A_FFA)
+	depends on (MACH_QSD8X50_SURF || MACH_QSD8X50_FFA || MACH_QSD8X50_COMET || MACH_QSD8X50A_SURF || MACH_QSD8X50A_FFA || MACH_ES209RA)
 	default y
 	select TPS65023
 	help
@@ -714,7 +669,7 @@ config QSD_SVS
 
 config QSD_PMIC_DEFAULT_DCDC1
 	int "PMIC default output voltage"
-	depends on (MACH_ES209RA || MACH_QSD8X50_SURF || MACH_QSD8X50_FFA || MACH_QSD8X50_COMET || MACH_QSD8X50A_SURF || MACH_QSD8X50A_FFA)
+	depends on (MACH_QSD8X50_SURF || MACH_QSD8X50_FFA || MACH_QSD8X50_COMET || MACH_QSD8X50A_SURF || MACH_QSD8X50A_FFA || MACH_ES209RA)
 	default 1250
 	help
 	  This is the PMIC voltage at Linux kernel boot.
@@ -967,14 +922,6 @@ config MSM_RPCSERVER_HANDSET
 	  Support for receiving handset events like headset detect,
 	  headset switch and clamshell state.
 
-config MSM_RMT_STORAGE_SERVER
-	depends on (ARCH_MSM && MSM_ONCRPCROUTER)
-	default n
-	bool "Remote Storage RPC server"
-	help
-	  Provide RPC mechanism for remote processors to access storage
-	  device on apps processor.
-
 config MSM_RMT_STORAGE_CLIENT
 	depends on (ARCH_MSM && MSM_ONCRPCROUTER)
 	default n
@@ -1004,25 +951,6 @@ config MSM_DALRPC_TEST
 	default m
 	help
 	  Exercises DAL RPC calls to QDSP6.
-
-config MSM_CPU_FREQ_SCREEN
-	depends on (HAS_EARLYSUSPEND && !CPU_FREQ_MSM)
-	default n
-	bool "Enable simple cpu frequency scaling"
-	help
-	 Simple cpufreq scaling based on screen ON/OFF.
-
-if MSM_CPU_FREQ_SCREEN
-
-config MSM_CPU_FREQ_SCREEN_OFF
-	int "Screen off cpu frequency"
-	default 245760
-
-config MSM_CPU_FREQ_SCREEN_ON
-	int "Screen on cpu frequency"
-	default 384000
-
-endif # MSM_CPU_FREQ_SCREEN
 
 if CPU_FREQ_MSM
 
@@ -1089,13 +1017,6 @@ choice
 	config AMSS_7X25_VERSION_2008
 		bool "2.0.08"
 endchoice
-config MSM_ADSP_REPORT_EVENTS
-	bool "Report modem events from the DSP"
-	default y
-	depends on (MSM_ADSP || MSM7KV2_AUDIO)
-	help
-	  Normally, only messages from the aDSP are reported to userspace.
-	  With this option, we report events from the aDSP as well.
 
 config MSM7KV2_AUDIO
 	bool "MSM7K v2 audio"
@@ -1112,12 +1033,6 @@ config MSM_ADSP_REPORT_EVENTS
 	help
 	  Normally, only messages from the aDSP are reported to userspace.
 	  With this option, we report events from the aDSP as well.
-
-config MSM_VREG_SWITCH_INVERTED
-	bool "Reverse vreg switch polarity"
-	default n
-	help
-	  Reverses the enable and disable for vreg switch.
 
 config MSM_QDSP6
 	tristate "QDSP6 support"
@@ -1290,44 +1205,6 @@ choice
 		bool "Reset the entire chip"
 endchoice
 
-config SEMC_SEPORT_PLATFORM
-	bool "SEMC Seport platform driver"
-	depends on (ARCH_SQD || ARCH_MSM) && SEMC_SEPORT
-	default n
-	help
-	  hardware dependant driver for SEMC Seport systemconnector.
-	  Requires SEMC systemconnector to be enabled!
-
-config SEMC_POWER
-	tristate "Semc power"
-	depends on POWER_SUPPLY
-	default n
-	help
-	  Enable semc battery power manager.
-
-config DELTA_PROXIMITY_SENSOR
-	tristate "Proximity sensor driver for delta platform"
-	default y
-	select SEMCCLASS
-	depends on (ARCH_SQD || ARCH_MSM)
-	help
-	  This option enables support delta platform
-	  proximity sensor.
-
-config MSM_MISC_MODEM_API
-	bool "MSM misc modem  API"
-	depends on (ARCH_SQD || ARCH_MSM)
-	default y
-	help
-	  This option enables misc modem API driver
-
-config ES209RA_HEADSET
-	bool "ES209RA headset detection driver"
-	default y if MACH_ES209RA
-	help
-	  Provides support for detecting 3.5mm audio jack, such as wired
-	  headset, on the es209ra platform.
-
 config MSM_NPA
 	bool "Node Power Architecture(NPA) support"
 	default y if ARCH_MSM7X30
@@ -1366,15 +1243,6 @@ config MSM_NPA_REMOTE_ONCRPC
 	bool "Enables NPA remoting through ONCRPC protocol."
 	depends on MSM_NPA && MSM_ONCRPCROUTER
 	select MSM_NPA_REMOTE
-	default n
-	help
-	  Enables Linux NPA clients to talk to NPA nodes in the modem
-	  using ONCRPC communication protocol.
-
-config NPA_REMOTE_ONCRPC
-	bool "Enables NPA remoting through ONCRPC protocol."
-	depends on NPA && MSM_ONCRPCROUTER
-	select NPA_REMOTE
 	default n
 	help
 	  Enables Linux NPA clients to talk to NPA nodes in the modem
@@ -1481,58 +1349,6 @@ config MSM_WATCHDOG
 		core 0's watchdog, and reset the entire SoC if it times out. It does
 		not run during the bootup process, so it will not catch any early
 		lockups.
-
-config ES209RA_INPUT_GPIO_MATRIX
-	bool "ES209RA GPIO key matrix driver"
-	depends on MACH_ES209RA && INPUT_GPIO
-	default y
-	help
-	  Enable GPIO key matrix driver for es209ra.
-	  This driver is derived from common GPIO key matrix driver(gpio_matrix.c)
-	  Difference from the common driver is as follows:
-	   1. Support discard timer for long key press.
-	   2. Pull-up the KR line when the other KR line is being driven.
-
-config AUDIO_QDSP_AMP_GPIO_CTRL
-	bool "Enable audio qdsp amp gpio ctrl"
-	default n
-	help
-	  Enable GPIO control of audio qdsp amplifier.
-
-config MSM_SPM
-	bool "Subsystem Power Manager"
-	depends on ARCH_MSM7X30
-	default y
-	help
-	  Enables support for the subsystem power manager.
-
-config EXP_DABORT_MSG
-	bool "Expand Data Abort Message"
-	default n
-	depends on ARCH_MSM_SCORPION
-	help
-	  This enables the expanded Oops message when data abort occurred.
-
-config SEMC_LOW_BATT_SHUTDOWN
-	bool "Low-Battery Shutdown support"
-	depends on (ARCH_MSM && MSM_ONCRPCROUTER)
-	default n
-	help
-	  Say Y to enable support for the low-battery detection.
-	  This driver communicate with AMSS VBatt driver.
-	  When battery voltage is less than the registerd threashold
-	  during power collapse, AMSS wakes ACPU up and sends callback
-	  request to this function.
-
-config SEMC_RPC_SERVER_HANDSET
-       bool "Enable SEMC handset rpc dispatcher"
-       depends on (ARCH_SQD || ARCH_MSM) && MSM_ONCRPCROUTER
-       default n
-       help
-         This enables SEMC version of rpc_server_handset message
-	 dispatcher.
-	 This cannot cooperate with MSM_RPCSERVER_HANDSET. If this
-	 is set, an error will be generated.
 
 config PMIC_TIME
 	bool "Export pmic time as sysfs entry"
@@ -1648,5 +1464,59 @@ config MMC_MSM_SDC4_LOW_DRIVE_STRENGTH
 	default n
 	help
 	  Enable to configure the low drive strength for SDC4.
+
+config SEMC_SEPORT_PLATFORM
+	bool "SEMC Seport platform driver"
+	depends on (ARCH_SQD || ARCH_MSM) && SEMC_SEPORT
+	default n
+	help
+	  hardware dependant driver for SEMC Seport systemconnector.
+	  Requires SEMC systemconnector to be enabled!
+
+config SEMC_POWER
+	tristate "Semc power"
+	depends on POWER_SUPPLY
+	default n
+	help
+	  Enable semc battery power manager.
+
+config ES209RA_HEADSET
+	bool "ES209RA headset detection driver"
+	default y if MACH_ES209RA
+	help
+	  Provides support for detecting 3.5mm audio jack, such as wired
+	  headset, on the es209ra platform.
+
+config ES209RA_INPUT_GPIO_MATRIX
+	bool "ES209RA GPIO key matrix driver"
+	depends on MACH_ES209RA && INPUT_GPIO
+	default y
+	help
+	  Enable GPIO key matrix driver for es209ra.
+	  This driver is derived from common GPIO key matrix driver(gpio_matrix.c)
+	  Difference from the common driver is as follows:
+	   1. Support discard timer for long key press.
+	   2. Pull-up the KR line when the other KR line is being driven.
+
+config SEMC_LOW_BATT_SHUTDOWN
+	bool "Low-Battery Shutdown support"
+	depends on (ARCH_MSM && MSM_ONCRPCROUTER)
+	default n
+	help
+	  Say Y to enable support for the low-battery detection.
+	  This driver communicate with AMSS VBatt driver.
+	  When battery voltage is less than the registerd threashold
+	  during power collapse, AMSS wakes ACPU up and sends callback
+	  request to this function.
+
+config SEMC_RPC_SERVER_HANDSET
+       bool "Enable SEMC handset rpc dispatcher"
+       depends on (ARCH_SQD || ARCH_MSM) && MSM_ONCRPCROUTER
+       default n
+       help
+         This enables SEMC version of rpc_server_handset message
+	 dispatcher.
+	 This cannot cooperate with MSM_RPCSERVER_HANDSET. If this
+	 is set, an error will be generated.
 
 endif

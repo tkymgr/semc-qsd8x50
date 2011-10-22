@@ -90,7 +90,6 @@ struct hci_dev {
 	__u32		idle_timeout;
 	__u16		sniff_min_interval;
 	__u16		sniff_max_interval;
-	__u16		link_supervision_timeout;
 
 	unsigned long	quirks;
 
@@ -118,7 +117,7 @@ struct hci_dev {
 	struct sk_buff		*sent_cmd;
 	struct sk_buff		*reassembly[3];
 
-	struct semaphore	req_lock;
+	struct mutex		req_lock;
 	wait_queue_head_t	req_wait_q;
 	__u32			req_status;
 	__u32			req_result;
@@ -137,6 +136,8 @@ struct hci_dev {
 
 	struct device		*parent;
 	struct device		dev;
+
+	struct rfkill		*rfkill;
 
 	struct module 		*owner;
 
@@ -172,6 +173,7 @@ struct hci_conn {
 	__u8             auth_type;
 	__u8             sec_level;
 	__u8             power_save;
+	__u16            disc_timeout;
 	unsigned long	 pend;
 
 	unsigned int	 sent;
@@ -181,9 +183,11 @@ struct hci_conn {
 	struct timer_list disc_timer;
 	struct timer_list idle_timer;
 
-	struct work_struct work;
+	struct work_struct work_add;
+	struct work_struct work_del;
 
 	struct device	dev;
+	atomic_t	devref;
 
 	struct hci_dev	*hdev;
 	void		*l2cap_data;
@@ -323,12 +327,15 @@ void hci_acl_disconn(struct hci_conn *conn, __u8 reason);
 void hci_add_sco(struct hci_conn *conn, __u16 handle);
 void hci_setup_sync(struct hci_conn *conn, __u16 handle);
 
-struct hci_conn *hci_conn_add(struct hci_dev *hdev, int type, bdaddr_t *dst);
+struct hci_conn *hci_conn_add(struct hci_dev *hdev, int type,
+					__u16 pkt_type, bdaddr_t *dst);
 int hci_conn_del(struct hci_conn *conn);
 void hci_conn_hash_flush(struct hci_dev *hdev);
 void hci_conn_check_pending(struct hci_dev *hdev);
 
-struct hci_conn *hci_connect(struct hci_dev *hdev, int type, bdaddr_t *dst, __u8 sec_level, __u8 auth_type);
+struct hci_conn *hci_connect(struct hci_dev *hdev, int type,
+					__u16 pkt_type, bdaddr_t *dst,
+					__u8 sec_level, __u8 auth_type);
 int hci_conn_check_link_mode(struct hci_conn *conn);
 int hci_conn_security(struct hci_conn *conn, __u8 sec_level, __u8 auth_type);
 int hci_conn_change_link_key(struct hci_conn *conn);
@@ -336,6 +343,9 @@ int hci_conn_switch_role(struct hci_conn *conn, __u8 role);
 
 void hci_conn_enter_active_mode(struct hci_conn *conn);
 void hci_conn_enter_sniff_mode(struct hci_conn *conn);
+
+void hci_conn_hold_device(struct hci_conn *conn);
+void hci_conn_put_device(struct hci_conn *conn);
 
 static inline void hci_conn_hold(struct hci_conn *conn)
 {
@@ -350,7 +360,7 @@ static inline void hci_conn_put(struct hci_conn *conn)
 		if (conn->type == ACL_LINK) {
 			del_timer(&conn->idle_timer);
 			if (conn->state == BT_CONNECTED) {
-				timeo = msecs_to_jiffies(HCI_DISCONN_TIMEOUT);
+				timeo = msecs_to_jiffies(conn->disc_timeout);
 				if (!conn->out)
 					timeo *= 20;
 			} else
@@ -457,6 +467,7 @@ int hci_recv_fragment(struct hci_dev *hdev, int type, void *data, int count);
 
 int hci_register_sysfs(struct hci_dev *hdev);
 void hci_unregister_sysfs(struct hci_dev *hdev);
+void hci_conn_init_sysfs(struct hci_conn *conn);
 void hci_conn_add_sysfs(struct hci_conn *conn);
 void hci_conn_del_sysfs(struct hci_conn *conn);
 
@@ -469,6 +480,7 @@ void hci_conn_del_sysfs(struct hci_conn *conn);
 #define lmp_sniffsubr_capable(dev) ((dev)->features[5] & LMP_SNIFF_SUBR)
 #define lmp_esco_capable(dev)      ((dev)->features[3] & LMP_ESCO)
 #define lmp_ssp_capable(dev)       ((dev)->features[6] & LMP_SIMPLE_PAIR)
+#define lmp_no_flush_capable(dev)  ((dev)->features[6] & LMP_NO_FLUSH)
 
 /* ----- HCI protocols ----- */
 struct hci_proto {
@@ -697,8 +709,8 @@ struct hci_sec_filter {
 #define HCI_REQ_PEND	  1
 #define HCI_REQ_CANCELED  2
 
-#define hci_req_lock(d)		down(&d->req_lock)
-#define hci_req_unlock(d)	up(&d->req_lock)
+#define hci_req_lock(d)		mutex_lock(&d->req_lock)
+#define hci_req_unlock(d)	mutex_unlock(&d->req_lock)
 
 void hci_req_complete(struct hci_dev *hdev, int result);
 

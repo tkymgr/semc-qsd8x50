@@ -6,10 +6,10 @@
 #ifdef __KERNEL__
 
 #include <linux/compiler.h>
+#include <linux/ktime.h>
 #include <linux/wait.h>
 #include <linux/string.h>
 #include <linux/fs.h>
-#include <linux/sched.h>
 #include <asm/uaccess.h>
 
 /* ~832 bytes of stack space used max in sys_select/sys_poll before allocating
@@ -28,34 +28,28 @@ struct poll_table_struct;
 /* 
  * structures and helpers for f_op->poll implementations
  */
-typedef void (*poll_queue_proc)(struct file *, wait_queue_head_t *,
-				struct poll_table_struct *, int);
+typedef void (*poll_queue_proc)(struct file *, wait_queue_head_t *, struct poll_table_struct *);
 
 typedef struct poll_table_struct {
 	poll_queue_proc qproc;
+	unsigned long key;
 } poll_table;
 
 static inline void poll_wait(struct file * filp, wait_queue_head_t * wait_address, poll_table *p)
 {
 	if (p && wait_address)
-		p->qproc(filp, wait_address, p, 0);
-}
-
-static inline void poll_wait_exclusive(struct file *filp,
-					wait_queue_head_t *wait_address,
-					poll_table *p)
-{
-	if (p && wait_address)
-		p->qproc(filp, wait_address, p, 0);
+		p->qproc(filp, wait_address, p);
 }
 
 static inline void init_poll_funcptr(poll_table *pt, poll_queue_proc qproc)
 {
 	pt->qproc = qproc;
+	pt->key   = ~0UL; /* all events enabled */
 }
 
 struct poll_table_entry {
 	struct file *filp;
+	unsigned long key;
 	wait_queue_t wait;
 	wait_queue_head_t *wait_address;
 };

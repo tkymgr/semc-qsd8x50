@@ -441,32 +441,49 @@ static void fat_clear_inode(struct inode *inode)
 
 static void fat_write_super(struct super_block *sb)
 {
+	lock_super(sb);
 	sb->s_dirt = 0;
 
 	if (!(sb->s_flags & MS_RDONLY))
 		fat_clusters_flush(sb);
+	unlock_super(sb);
+}
+
+static int fat_sync_fs(struct super_block *sb, int wait)
+{
+	int err = 0;
+
+	if (sb->s_dirt) {
+		lock_super(sb);
+		sb->s_dirt = 0;
+		err = fat_clusters_flush(sb);
+		unlock_super(sb);
+	}
+
+	return err;
 }
 
 static void fat_put_super(struct super_block *sb)
 {
 	struct msdos_sb_info *sbi = MSDOS_SB(sb);
 
-	if (sbi->nls_disk) {
-		unload_nls(sbi->nls_disk);
-		sbi->nls_disk = NULL;
-		sbi->options.codepage = fat_default_codepage;
-	}
-	if (sbi->nls_io) {
-		unload_nls(sbi->nls_io);
-		sbi->nls_io = NULL;
-	}
-	if (sbi->options.iocharset != fat_default_iocharset) {
+	lock_kernel();
+
+	if (sb->s_dirt)
+		fat_write_super(sb);
+
+	iput(sbi->fat_inode);
+
+	unload_nls(sbi->nls_disk);
+	unload_nls(sbi->nls_io);
+
+	if (sbi->options.iocharset != fat_default_iocharset)
 		kfree(sbi->options.iocharset);
-		sbi->options.iocharset = fat_default_iocharset;
-	}
 
 	sb->s_fs_info = NULL;
 	kfree(sbi);
+
+	unlock_kernel();
 }
 
 static struct kmem_cache *fat_inode_cachep;
@@ -523,7 +540,9 @@ static int fat_remount(struct super_block *sb, int *flags, char *data)
 
 static int fat_statfs(struct dentry *dentry, struct kstatfs *buf)
 {
-	struct msdos_sb_info *sbi = MSDOS_SB(dentry->d_sb);
+	struct super_block *sb = dentry->d_sb;
+	struct msdos_sb_info *sbi = MSDOS_SB(sb);
+	u64 id = huge_encode_dev(sb->s_bdev->bd_dev);
 
 	/* If the count of free cluster is still unknown, counts it here. */
 	if (sbi->free_clusters == -1 || !sbi->free_clus_valid) {
@@ -537,6 +556,8 @@ static int fat_statfs(struct dentry *dentry, struct kstatfs *buf)
 	buf->f_blocks = sbi->max_cluster - FAT_START_ENT;
 	buf->f_bfree = sbi->free_clusters;
 	buf->f_bavail = sbi->free_clusters;
+	buf->f_fsid.val[0] = (u32)id;
+	buf->f_fsid.val[1] = (u32)(id >> 32);
 	buf->f_namelen = sbi->options.isvfat ? 260 : 12;
 
 	return 0;
@@ -628,6 +649,7 @@ static const struct super_operations fat_sops = {
 	.delete_inode	= fat_delete_inode,
 	.put_super	= fat_put_super,
 	.write_super	= fat_write_super,
+	.sync_fs	= fat_sync_fs,
 	.statfs		= fat_statfs,
 	.clear_inode	= fat_clear_inode,
 	.remount_fs	= fat_remount,
@@ -794,7 +816,7 @@ static int fat_show_options(struct seq_file *m, struct vfsmount *mnt)
 			seq_puts(m, ",shortname=mixed");
 			break;
 		case VFAT_SFN_DISPLAY_LOWER | VFAT_SFN_CREATE_WIN95:
-			/* seq_puts(m, ",shortname=lower"); */
+			seq_puts(m, ",shortname=lower");
 			break;
 		default:
 			seq_puts(m, ",shortname=unknown");
@@ -940,12 +962,12 @@ static int parse_options(char *options, int is_vfat, int silent, int *debug,
 
 	opts->fs_uid = current_uid();
 	opts->fs_gid = current_gid();
-	opts->fs_fmask = opts->fs_dmask = current->fs->umask;
+	opts->fs_fmask = opts->fs_dmask = current_umask();
 	opts->allow_utime = -1;
 	opts->codepage = fat_default_codepage;
 	opts->iocharset = fat_default_iocharset;
 	if (is_vfat) {
-		opts->shortname = VFAT_SFN_DISPLAY_LOWER|VFAT_SFN_CREATE_WIN95;
+		opts->shortname = VFAT_SFN_DISPLAY_WINNT|VFAT_SFN_CREATE_WIN95;
 		opts->rodir = 0;
 	} else {
 		opts->shortname = 0;
@@ -1190,7 +1212,7 @@ static int fat_read_root(struct inode *inode)
 int fat_fill_super(struct super_block *sb, void *data, int silent,
 		   const struct inode_operations *fs_dir_inode_ops, int isvfat)
 {
-	struct inode *root_inode = NULL;
+	struct inode *root_inode = NULL, *fat_inode = NULL;
 	struct buffer_head *bh;
 	struct fat_boot_sector *b;
 	struct fat_boot_bsx *bsx;
@@ -1439,6 +1461,11 @@ int fat_fill_super(struct super_block *sb, void *data, int silent,
 	}
 
 	error = -ENOMEM;
+	fat_inode = new_inode(sb);
+	if (!fat_inode)
+		goto out_fail;
+	MSDOS_I(fat_inode)->i_pos = 0;
+	sbi->fat_inode = fat_inode;
 	root_inode = new_inode(sb);
 	if (!root_inode)
 		goto out_fail;
@@ -1464,6 +1491,8 @@ out_invalid:
 		       " on dev %s.\n", sb->s_id);
 
 out_fail:
+	if (fat_inode)
+		iput(fat_inode);
 	if (root_inode)
 		iput(root_inode);
 	if (sbi->nls_io)

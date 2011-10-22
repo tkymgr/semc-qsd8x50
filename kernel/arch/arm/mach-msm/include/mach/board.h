@@ -164,7 +164,7 @@ struct msm_camera_sensor_info {
 	struct msm_camera_sensor_flash_data *flash_data;
 	int csi_if;
 	struct msm_camera_csi_params csi_params;
-
+#ifdef CONFIG_MACH_ES209RA
 	int sensor_int;
 	int sensor_vsync;
 	struct msm_camera_sensor_pwr standby;
@@ -179,8 +179,17 @@ struct msm_camera_sensor_info {
 	struct msm_camera_sensor_pwr vcam_sd;
 	struct msm_camera_sensor_pwr vcam_af;
 	struct msm_camera_sensor_pwr vcam_sa;
+	struct msm_camera_sensor_strobe_flash_data *strobe_flash_data;
+#else
+	struct msm_camera_sensor_pwr vcam_io;
+	struct msm_camera_sensor_pwr vcam_sd;
+	struct msm_camera_sensor_pwr vcam_af;
+	struct msm_camera_sensor_pwr vcam_sa;
+	struct msm_camera_sensor_strobe_flash_data *strobe_flash_data;
+#endif
 };
 
+#ifdef CONFIG_MACH_ES209RA
 struct panel_data_ext {
 	void (*power_on) (void);
 	void (*power_off) (void);
@@ -189,6 +198,7 @@ struct panel_data_ext {
 	int use_dma_edge_pixels_fix;
 	void (*backlight_ctrl) (bool);
 };
+#endif
 
 struct clk;
 
@@ -224,6 +234,7 @@ enum msm_adspdec_concurrency {
 	MSM_ADSP_CODEC_WMAPRO = 13,
 	MSM_ADSP_MODE_TUNNEL = 24,
 	MSM_ADSP_MODE_NONTUNNEL = 25,
+	MSM_ADSP_MODE_LP = 26,
 	MSM_ADSP_OP_DMA = 28,
 	MSM_ADSP_OP_DM = 29,
 };
@@ -265,7 +276,7 @@ struct msm_panel_common_pdata {
 
 struct lcdc_platform_data {
 	int (*lcdc_gpio_config)(int on);
-	void (*lcdc_power_save)(int);
+	int (*lcdc_power_save)(int);
 };
 
 struct tvenc_platform_data {
@@ -273,9 +284,13 @@ struct tvenc_platform_data {
 };
 
 struct mddi_platform_data {
-	void (*mddi_power_save)(int on);
+	int (*mddi_power_save)(int on);
 	int (*mddi_sel_clk)(u32 *clk_rate);
-	int (*mddi_power_on)(int);
+	int (*mddi_client_power)(u32 client_id);
+};
+
+struct mipi_dsi_platform_data {
+	int (*dsi_power_save)(int on);
 };
 
 struct msm_fb_platform_data {
@@ -335,7 +350,6 @@ void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *);
 struct mmc_platform_data;
 int __init msm_add_sdcc(unsigned int controller,
 		struct mmc_platform_data *plat);
-int __init rmt_storage_add_ramfs(void);
 
 struct msm_usb_host_platform_data;
 int __init msm_add_host(unsigned int host,
@@ -351,8 +365,10 @@ void __init msm_snddev_init(void);
 void __init msm_snddev_init_timpani(void);
 void msm_snddev_poweramp_on(void);
 void msm_snddev_poweramp_off(void);
-void msm_snddev_hsed_pamp_on(void);
-void msm_snddev_hsed_pamp_off(void);
+void msm_snddev_hsed_voltage_on(void);
+void msm_snddev_hsed_voltage_off(void);
+void msm_hac_amp_on(void);
+void msm_hac_amp_off(void);
 void msm_snddev_tx_route_config(void);
 void msm_snddev_tx_route_deconfig(void);
 void msm_snddev_rx_route_config(void);

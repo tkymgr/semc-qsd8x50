@@ -50,6 +50,9 @@ static const struct hid_blacklist {
 	{ USB_VENDOR_ID_ATEN, USB_DEVICE_ID_ATEN_2PORTKVM, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_ATEN, USB_DEVICE_ID_ATEN_4PORTKVM, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_ATEN, USB_DEVICE_ID_ATEN_4PORTKVMC, HID_QUIRK_NOGET },
+	{ USB_VENDOR_ID_CH, USB_DEVICE_ID_CH_COMBATSTICK, HID_QUIRK_NOGET },
+	{ USB_VENDOR_ID_CH, USB_DEVICE_ID_CH_FLIGHT_SIM_YOKE, HID_QUIRK_NOGET },
+	{ USB_VENDOR_ID_CH, USB_DEVICE_ID_CH_PRO_PEDALS, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_DMI, USB_DEVICE_ID_DMI_ENC, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_ELO, USB_DEVICE_ID_ELO_TS2700, HID_QUIRK_NOGET },
 	{ USB_VENDOR_ID_SUN, USB_DEVICE_ID_RARITAN_KVM_DONGLE, HID_QUIRK_NOGET },
@@ -198,7 +201,7 @@ int usbhid_quirks_init(char **quirks_param)
 	u32 quirks;
 	int n = 0, m;
 
-	for (; quirks_param[n] && n < MAX_USBHID_BOOT_QUIRKS; n++) {
+	for (; n < MAX_USBHID_BOOT_QUIRKS && quirks_param[n]; n++) {
 
 		m = sscanf(quirks_param[n], "0x%hx:0x%hx:0x%x",
 				&idVendor, &idProduct, &quirks);
@@ -277,7 +280,7 @@ u32 usbhid_lookup_quirk(const u16 idVendor, const u16 idProduct)
 	if (idVendor == USB_VENDOR_ID_NCR &&
 			idProduct >= USB_DEVICE_ID_NCR_FIRST &&
 			idProduct <= USB_DEVICE_ID_NCR_LAST)
-			return HID_QUIRK_NOGET;
+			return HID_QUIRK_NO_INIT_REPORTS;
 
 	down_read(&dquirks_rwsem);
 	bl_entry = usbhid_exists_dquirk(idVendor, idProduct);

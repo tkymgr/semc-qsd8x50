@@ -11,13 +11,13 @@
 #include <mach/pmic.h>
 
 static ssize_t pmic_time_show(struct device *dev,
-			struct device_attribute *attr,
-			char *buf)
+				struct device_attribute *attr,
+				char *buf)
 {
 	ssize_t rc;
 	uint tm = 0;
 
-	rc = pmic_rtc_get_time((struct rtc_time*)&tm);
+	rc = pmic_rtc_get_time((struct rtc_time *)&tm);
 	if (!rc)
 		rc = sprintf(buf, "%u\n", tm);
 
@@ -32,7 +32,8 @@ static int __init pmic_time_probe(struct platform_device *pdev)
 
 	rc = device_create_file(&pdev->dev, &dev_attr_pmic_time);
 	if (rc)
-		printk(KERN_ERR "%s: failed to register pmic_time\n", __func__);
+		printk(KERN_ERR "%s: failed to register pmic_time\n",
+			__func__);
 
 	return rc;
 }
@@ -57,7 +58,8 @@ static int __init pmic_time_init(void)
 
 	rc = platform_driver_register(&pmic_time_driver);
 	if (rc)
-		pr_err("%s: platform_driver_register failed: %d\n", __func__, rc);
+		pr_err("%s: platform_driver_register failed: %d\n",
+			__func__, rc);
 
 	return rc;
 }

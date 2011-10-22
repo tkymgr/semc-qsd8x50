@@ -121,31 +121,6 @@ static void set_cpu_work(struct work_struct *work)
 }
 #endif
 
-#ifdef CONFIG_MSM_CPU_FREQ_SCREEN
-static void msm_early_suspend(struct early_suspend *handler)
-{
-       acpuclk_set_rate(0, CONFIG_MSM_CPU_FREQ_SCREEN_OFF, SETRATE_CPUFREQ);
-}
-
-static void msm_late_resume(struct early_suspend *handler)
-{
-       acpuclk_set_rate(0, CONFIG_MSM_CPU_FREQ_SCREEN_ON, SETRATE_CPUFREQ);
-}
-
-static struct early_suspend msm_power_suspend = {
-       .suspend = msm_early_suspend,
-       .resume = msm_late_resume,
-};
-
-static int __init clock_late_init(void)
-{
-       register_early_suspend(&msm_power_suspend);
-       return 0;
-}
-
-late_initcall(clock_late_init);
-#elif defined(CONFIG_CPU_FREQ_MSM)
-
 static int msm_cpufreq_target(struct cpufreq_policy *policy,
 				unsigned int target_freq,
 				unsigned int relation)
@@ -200,7 +175,7 @@ static int msm_cpufreq_verify(struct cpufreq_policy *policy)
 	return 0;
 }
 
-static int __init msm_cpufreq_init(struct cpufreq_policy *policy)
+static int __cpuinit msm_cpufreq_init(struct cpufreq_policy *policy)
 {
 	struct cpufreq_frequency_table *table;
 #ifdef CONFIG_SMP
@@ -244,4 +219,4 @@ static int __init msm_cpufreq_register(void)
 }
 
 late_initcall(msm_cpufreq_register);
-#endif
+

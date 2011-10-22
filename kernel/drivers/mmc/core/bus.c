@@ -274,6 +274,13 @@ int mmc_add_card(struct mmc_card *card)
  */
 void mmc_remove_card(struct mmc_card *card)
 {
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+	if (mmc_bus_needs_resume(card->host)) {
+		card->host->bus_resume_flags &= ~MMC_BUSRESUME_NEEDS_RESUME;
+		printk(KERN_INFO "%s: MMC card is removed so no need to resume the bus.\n",
+			mmc_hostname(card->host));
+	}
+#endif
 #ifdef CONFIG_DEBUG_FS
 	mmc_remove_card_debugfs(card);
 #endif
@@ -286,6 +293,9 @@ void mmc_remove_card(struct mmc_card *card)
 			printk(KERN_INFO "%s: card %04x removed\n",
 				mmc_hostname(card->host), card->rca);
 		}
+#ifdef CONFIG_MACH_SEMC_ZEUS
+		mmc_card_set_removed(card);
+#endif /* CONFIG_MACH_SEMC_ZEUS */
 		device_del(&card->dev);
 	}
 
