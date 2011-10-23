@@ -77,6 +77,12 @@ static u32 msm_fb_pseudo_palette[16] = {
 	0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff
 };
 
+#ifdef CONFIG_FB_MSM_SEMC_LCD_BACKLIGHT_CONTROL
+static void (*backlight_ctrl_fp) (bool);
+static void msm_fb_resume_backlight_work_handler(struct work_struct *w);
+static DECLARE_DELAYED_WORK(resume_backlight_work,
+				msm_fb_resume_backlight_work_handler);
+#endif
 u32 msm_fb_debug_enabled;
 /* Setting msm_fb_msg_level to 8 prints out ALL messages */
 u32 msm_fb_msg_level = 7;
@@ -616,6 +622,26 @@ void msm_fb_set_backlight(struct msm_fb_data_type *mfd, __u32 bkl_lvl, u32 save)
 	}
 }
 
+#ifdef CONFIG_FB_MSM_SEMC_LCD_BACKLIGHT_CONTROL
+
+static void msm_fb_resume_backlight_work_handler(struct work_struct *w)
+{
+	MSM_FB_DEBUG("%s\n", __func__);
+
+	if (backlight_ctrl_fp)
+		backlight_ctrl_fp(true);
+}
+
+static void msm_fb_resume_backlight_workqueue(unsigned int delay_ms)
+{
+	unsigned long j;
+
+	MSM_FB_DEBUG("%s: delay_ms = %d\n", __func__, delay_ms);
+	j = delay_ms * HZ / 1000;
+	schedule_delayed_work(&resume_backlight_work, j);
+}
+
+#endif
 static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 			    boolean op_enable)
 {
@@ -640,7 +666,30 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 				pdata->power_on_panel_at_pan = 1;
 			ret = pdata->on(mfd->pdev);
 			if (ret == 0) {
+#ifdef CONFIG_FB_MSM_SEMC_LCD_BACKLIGHT_CONTROL
+				struct fb_var_screeninfo var;
+#endif
 				mfd->panel_power_on = TRUE;
+
+#ifdef CONFIG_FB_MSM_SEMC_LCD_BACKLIGHT_CONTROL
+				var = info->var;
+				var.reserved[0] = 0x54445055;
+				var.reserved[1] = 0;
+				var.reserved[2] = pdata->panel_info.yres << 16 |
+							pdata->panel_info.xres;
+
+				/* Refresh display memory since it may have been
+				   lost (depends on type of display and power
+				   off mode) */
+				(void)msm_fb_pan_display(&var, info);
+				/* Delay backlight on until frambuffer has
+				   been updated to avoid flickering*/
+				backlight_ctrl_fp =
+					pdata->panel_ext->backlight_ctrl;
+				msm_fb_resume_backlight_workqueue(100);
+#endif
+				msm_fb_set_backlight(mfd,
+						     mfd->bl_level, 0);
 
 /* ToDo: possible conflict with android which doesn't expect sw refresher */
 /*
@@ -668,11 +717,19 @@ static int msm_fb_blank_sub(int blank_mode, struct fb_info *info,
 			curr_pwr_state = mfd->panel_power_on;
 			mfd->panel_power_on = FALSE;
 
+#ifdef CONFIG_FB_MSM_SEMC_LCD_BACKLIGHT_CONTROL
+			if (pdata->panel_ext->backlight_ctrl)
+				pdata->panel_ext->backlight_ctrl(false);
+#endif
+
 			msleep(16);
 			ret = pdata->off(mfd->pdev);
 			if (ret)
 				mfd->panel_power_on = curr_pwr_state;
 
+#ifdef CONFIG_MACH_ES209RA
+			msm_fb_set_backlight(mfd, 0, 0);
+#endif
 			mfd->op_enable = TRUE;
 		}
 		break;

@@ -63,11 +63,13 @@
 #include "devices.h"
 #include "timer.h"
 #include "socinfo.h"
+#include "cpufreq.h"
 #include "msm-keypad-devices.h"
 #include "pm.h"
 #include "smd_private.h"
 #include "proc_comm.h"
 #include <linux/msm_kgsl.h>
+#include <mach/dal_axi.h>
 #ifdef CONFIG_USB_ANDROID
 #include <linux/usb/android_composite.h>
 #endif
@@ -335,18 +337,13 @@ static struct platform_device smc91x_device = {
 	.num_resources  = ARRAY_SIZE(smc91x_resources),
 	.resource       = smc91x_resources,
 };
-#endif
-
-static struct msm_handset_platform_data hs_platform_data = {
-	.hs_name = "8k_handset",
-	.pwr_key_delay_ms = 500, /* 0 will disable end key */
-};
-
+#endif /* CONFIG_SMC91X */
+ 
 static struct platform_device hs_device = {
 	.name   = "msm-handset",
 	.id     = -1,
 	.dev    = {
-		.platform_data = &hs_platform_data,
+		.platform_data = "8k_handset",
 	},
 };
 
@@ -886,6 +883,8 @@ static struct resource msm_audio_resources[] = {
 		.end    = 71,
 		.flags  = IORESOURCE_IO,
 	},
+/* Do anyone know who use these GPIO? */
+#if 0
 	{
 		.name   = "sdac_din",
 		.start  = 144,
@@ -916,6 +915,7 @@ static struct resource msm_audio_resources[] = {
 		.end    = 146,
 		.flags  = IORESOURCE_IO,
 	},
+#endif
 	{
 		.name	= "audio_base_addr",
 		.start	= 0xa0700000,
@@ -1040,133 +1040,67 @@ static void __init bt_power_init(void)
 	msm_bt_power_device.dev.platform_data = &bluetooth_power;
 	printk(KERN_DEBUG "Bluetooth power switch initialized\n");
 }
-/*
-static int bluetooth_power(int on)
-{
-	int rc;
-	struct vreg *vreg_wlan;
-
-	vreg_wlan = vreg_get(NULL, "wlan");
-
-	if (IS_ERR(vreg_wlan)) {
-		printk(KERN_ERR "%s: vreg get failed (%ld)\n",
-		       __func__, PTR_ERR(vreg_wlan));
-		return PTR_ERR(vreg_wlan);
-	}
-
-	if (on) {
-		// units of mV, steps of 50 mV 
-		rc = vreg_set_level(vreg_wlan, PMIC_VREG_WLAN_LEVEL);
-		if (rc) {
-			printk(KERN_ERR "%s: vreg wlan set level failed (%d)\n",
-			       __func__, rc);
-			return -EIO;
-		}
-		rc = vreg_enable(vreg_wlan);
-		if (rc) {
-			printk(KERN_ERR "%s: vreg wlan enable failed (%d)\n",
-			       __func__, rc);
-			return -EIO;
-		}
-
-		rc = msm_gpios_enable(bt_config_power_on,
-					ARRAY_SIZE(bt_config_power_on));
-		if (rc < 0) {
-			printk(KERN_ERR
-				"%s: bt power on gpio config failed: %d\n",
-				__func__, rc);
-			return rc;
-		}
-
-		gpio_set_value(22, on); // VDD_IO 
-		gpio_set_value(18, on); // SYSRST 
-
-		if (machine_is_qsd8x50_ffa() || machine_is_qsd8x50a_ffa()) {
-			gpio_set_value(138, 0); // WLAN: CHIP_PWD 
-			gpio_set_value(113, on); // WLAN 
-		}
-	} else {
-		if (machine_is_qsd8x50_ffa() || machine_is_qsd8x50a_ffa()) {
-			gpio_set_value(138, on); // WLAN: CHIP_PWD 
-			gpio_set_value(113, on); // WLAN 
-		}
-
-		gpio_set_value(18, on); // SYSRST 
-		gpio_set_value(22, on); // VDD_IO 
-
-		rc = vreg_disable(vreg_wlan);
-		if (rc) {
-			printk(KERN_ERR "%s: vreg wlan disable failed (%d)\n",
-					__func__, rc);
-			return -EIO;
-		}
-
-		rc = msm_gpios_enable(bt_config_power_off,
-					ARRAY_SIZE(bt_config_power_off));
-		if (rc < 0) {
-			printk(KERN_ERR
-				"%s: bt power off gpio config failed: %d\n",
-				__func__, rc);
-			return rc;
-		}
-	}
-
-	printk(KERN_DEBUG "Bluetooth power switch: %d\n", on);
-
-	return 0;
-}
-
-static void __init bt_power_init(void)
-{
-	struct vreg *vreg_bt;
-	int rc;
-
-	if (machine_is_qsd8x50_ffa() || machine_is_qsd8x50a_ffa()) {
-		gpio_set_value(138, 0); // WLAN: CHIP_PWD 
-		gpio_set_value(113, 0); // WLAN 
-	}
-
-	gpio_set_value(18, 0); // SYSRST 
-	gpio_set_value(22, 0); // VDD_IO 
-
-	// do not have vreg bt defined, gp6 is the same 
-	// vreg_get parameter 1 (struct device *) is ignored 
-	vreg_bt = vreg_get(NULL, "gp6");
-
-	if (IS_ERR(vreg_bt)) {
-		printk(KERN_ERR "%s: vreg get failed (%ld)\n",
-		       __func__, PTR_ERR(vreg_bt));
-		goto exit;
-	}
-
-	// units of mV, steps of 50 mV
-	rc = vreg_set_level(vreg_bt, PMIC_VREG_GP6_LEVEL);
-	if (rc) {
-		printk(KERN_ERR "%s: vreg bt set level failed (%d)\n",
-		       __func__, rc);
-		goto exit;
-	}
-	rc = vreg_enable(vreg_bt);
-	if (rc) {
-		printk(KERN_ERR "%s: vreg bt enable failed (%d)\n",
-		       __func__, rc);
-		goto exit;
-	}
-
-	if (bluetooth_power(0))
-		goto exit;
-
-	msm_bt_power_device.dev.platform_data = &bluetooth_power;
-
-	printk(KERN_DEBUG "Bluetooth power switch: initialized\n");
-
-exit:
-	return;
-}
-*/
 #else
 #define bt_power_init(x) do {} while (0)
 #endif
+
+struct kgsl_cpufreq_voter {
+	int idle;
+	struct msm_cpufreq_voter voter;
+};
+
+static int kgsl_cpufreq_vote(struct msm_cpufreq_voter *v)
+{
+	struct kgsl_cpufreq_voter *kv =
+			container_of(v, struct kgsl_cpufreq_voter, voter);
+
+	return kv->idle ? MSM_CPUFREQ_IDLE : MSM_CPUFREQ_ACTIVE;
+}
+
+static struct kgsl_cpufreq_voter kgsl_cpufreq_voter = {
+	.idle = 1,
+	.voter = {
+		.vote = kgsl_cpufreq_vote,
+	},
+};
+
+static void kgsl_idle_cb(int idle)
+{
+	if (idle != kgsl_cpufreq_voter.idle) {
+		kgsl_cpufreq_voter.idle = idle;
+		msm_cpufreq_voter_update(&kgsl_cpufreq_voter.voter);
+	}
+}
+
+static struct kgsl_platform_data kgsl_pdata = {
+	/* AXI rates in KHz */
+	.high_axi_3d = 192000,
+	.high_axi_2d = 192000,
+
+	.max_grp2d_freq = 0,
+	.min_grp2d_freq = 0,
+	.set_grp2d_async = NULL,	/* HW workaround, run Z180 SYNC @ 192 MHZ */
+	.max_grp3d_freq = 245760000,
+	.min_grp3d_freq = 192 * 1000*1000,
+	.set_grp3d_async = NULL, //set_grp3d_async,
+	.imem_clk_name = "imem_clk",
+	.grp3d_clk_name = "grp_clk",
+	.grp2d0_clk_name = "grp_2d_clk",
+	.idle_callback = kgsl_idle_cb,
+#if 0
+	.high_axi_3d = 128000, // Max for 8K 
+	.max_grp2d_freq = 0,
+	.min_grp2d_freq = 0,
+	.set_grp2d_async = NULL,
+	.max_grp3d_freq = 0,
+	.min_grp3d_freq = 0,
+	.set_grp3d_async = NULL,
+	.imem_clk_name = "imem_clk",
+	.grp3d_clk_name = "grp_clk",
+	.grp2d0_clk_name = NULL,
+#endif
+};
+
 
 static struct resource kgsl_resources[] = {
        {
@@ -1187,19 +1121,6 @@ static struct resource kgsl_resources[] = {
 		.end = INT_GRAPHICS,
 		.flags = IORESOURCE_IRQ,
        },
-};
-
-static struct kgsl_platform_data kgsl_pdata = {
-	.high_axi_3d = 128000, // Max for 8K 
-	.max_grp2d_freq = 0,
-	.min_grp2d_freq = 0,
-	.set_grp2d_async = NULL,
-	.max_grp3d_freq = 0,
-	.min_grp3d_freq = 0,
-	.set_grp3d_async = NULL,
-	.imem_clk_name = "imem_clk",
-	.grp3d_clk_name = "grp_clk",
-	.grp2d0_clk_name = NULL,
 };
 
 static struct platform_device msm_device_kgsl = {
@@ -1317,8 +1238,8 @@ static struct max17040_platform_data max17040_platform_data = {
 	},
 	.rcomp_data = {
 		.rcomp0 = 0x55,
-		.temp_co_hot = 1400,
-		.temp_co_cold = 9725,
+		.temp_co_hot = -1400,
+		.temp_co_cold = -9725,
 		.temp_div = 1000,
 	},
 	.chg_max_temp = 550,
@@ -1613,6 +1534,136 @@ static struct platform_device msm_camera_sensor_semc_imx046_camera = {
 	},
 };
 #endif
+
+#ifdef CONFIG_MT9D112
+static struct msm_camera_sensor_flash_data flash_mt9d112 = {
+	.flash_type = MSM_CAMERA_FLASH_LED,
+	.flash_src  = &msm_flash_src
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_mt9d112_data = {
+	.sensor_name    = "mt9d112",
+	.sensor_reset   = 17,
+	.sensor_pwd     = 85,
+	.vcm_pwd        = 0,
+	.vcm_enable     = 0,
+	.pdata          = &msm_camera_device_data,
+	.resource       = msm_camera_resources,
+	.num_resources  = ARRAY_SIZE(msm_camera_resources)
+	.flash_data     = &flash_mt9d112
+};
+
+static struct platform_device msm_camera_sensor_mt9d112 = {
+	.name      = "msm_camera_mt9d112",
+	.dev       = {
+		.platform_data = &msm_camera_sensor_mt9d112_data,
+	},
+};
+#endif
+
+#ifdef CONFIG_S5K3E2FX
+static struct msm_camera_sensor_flash_data flash_s5k3e2fx = {
+	.flash_type = MSM_CAMERA_FLASH_LED,
+	.flash_src  = &msm_flash_src
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_s5k3e2fx_data = {
+	.sensor_name    = "s5k3e2fx",
+	.sensor_reset   = 17,
+	.sensor_pwd     = 85,
+	/*.vcm_pwd = 31, */  /* CAM1_VCM_EN, enabled in a9 */
+	.vcm_enable     = 0,
+	.pdata          = &msm_camera_device_data,
+	.resource       = msm_camera_resources,
+	.num_resources  = ARRAY_SIZE(msm_camera_resources)
+	.flash_data     = &flash_s5k3e2fx
+};
+
+static struct platform_device msm_camera_sensor_s5k3e2fx = {
+	.name      = "msm_camera_s5k3e2fx",
+	.dev       = {
+		.platform_data = &msm_camera_sensor_s5k3e2fx_data,
+	},
+};
+#endif
+
+#ifdef CONFIG_MT9P012
+static struct msm_camera_sensor_flash_data flash_mt9p012 = {
+	.flash_type = MSM_CAMERA_FLASH_LED,
+	.flash_src  = &msm_flash_src
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_mt9p012_data = {
+	.sensor_name    = "mt9p012",
+	.sensor_reset   = 17,
+	.sensor_pwd     = 85,
+	.vcm_pwd        = 88,
+	.vcm_enable     = 0,
+	.pdata          = &msm_camera_device_data,
+	.resource       = msm_camera_resources,
+	.num_resources  = ARRAY_SIZE(msm_camera_resources)
+	.flash_data     = &flash_mt9p012
+};
+
+static struct platform_device msm_camera_sensor_mt9p012 = {
+	.name      = "msm_camera_mt9p012",
+	.dev       = {
+		.platform_data = &msm_camera_sensor_mt9p012_data,
+	},
+};
+#endif
+
+#ifdef CONFIG_MT9P012_KM
+static struct msm_camera_sensor_flash_data flash_mt9p012_km = {
+	.flash_type = MSM_CAMERA_FLASH_LED,
+	.flash_src  = &msm_flash_src
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_mt9p012_km_data = {
+	.sensor_name    = "mt9p012_km",
+	.sensor_reset   = 17,
+	.sensor_pwd     = 85,
+	.vcm_pwd        = 88,
+	.vcm_enable     = 0,
+	.pdata          = &msm_camera_device_data,
+	.resource       = msm_camera_resources,
+	.num_resources  = ARRAY_SIZE(msm_camera_resources)
+	.flash_data     = &flash_mt9p012_km
+};
+
+static struct platform_device msm_camera_sensor_mt9p012_km = {
+	.name      = "msm_camera_mt9p012_km",
+	.dev       = {
+		.platform_data = &msm_camera_sensor_mt9p012_km_data,
+	},
+};
+#endif
+
+#ifdef CONFIG_MT9T013
+static struct msm_camera_sensor_flash_data flash_mt9t013 = {
+	.flash_type = MSM_CAMERA_FLASH_LED,
+	.flash_src  = &msm_flash_src
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_mt9t013_data = {
+	.sensor_name    = "mt9t013",
+	.sensor_reset   = 17,
+	.sensor_pwd     = 85,
+	.vcm_pwd        = 0,
+	.vcm_enable     = 0,
+	.pdata          = &msm_camera_device_data,
+	.resource       = msm_camera_resources,
+	.num_resources  = ARRAY_SIZE(msm_camera_resources)
+	.flash_data     = &flash_mt9t013
+};
+
+static struct platform_device msm_camera_sensor_mt9t013 = {
+	.name      = "msm_camera_mt9t013",
+	.dev       = {
+		.platform_data = &msm_camera_sensor_mt9t013_data,
+	},
+};
+#endif
 #endif /*CONFIG_MSM_CAMERA*/
 
 static struct platform_device msm_wlan_ar6000_pm_device = {
@@ -1737,7 +1788,6 @@ static struct platform_device *devices[] __initdata = {
 #endif
 	&msm_device_tssc,
 	&msm_audio_device,
-	//&msm_device_uart_dm1,
 	&msm_device_uart1,
 	&msm_bluesleep_device,
 #ifdef CONFIG_BT
@@ -1751,6 +1801,21 @@ static struct platform_device *devices[] __initdata = {
 	&hs_device,
 #if defined(CONFIG_TSIF) || defined(CONFIG_TSIF_MODULE)
 	&msm_device_tsif,
+#endif
+#ifdef CONFIG_MT9T013
+	&msm_camera_sensor_mt9t013,
+#endif
+#ifdef CONFIG_MT9D112
+	&msm_camera_sensor_mt9d112,
+#endif
+#ifdef CONFIG_S5K3E2FX
+	&msm_camera_sensor_s5k3e2fx,
+#endif
+#ifdef CONFIG_MT9P012
+	&msm_camera_sensor_mt9p012,
+#endif
+#ifdef CONFIG_MT9P012_KM
+	&msm_camera_sensor_mt9p012_km,
 #endif
 #ifdef CONFIG_SEMC_IMX046_CAMERA
 	&msm_camera_sensor_semc_imx046_camera,
@@ -2113,26 +2178,18 @@ static void __init qsd8x50_cfg_smc91x(void)
 {
 	int rc = 0;
 
-	if (machine_is_qsd8x50_surf() || machine_is_qsd8x50a_surf()) {
-		smc91x_resources[0].start = 0x70000300;
-		smc91x_resources[0].end = 0x700003ff;
-		smc91x_resources[1].start = MSM_GPIO_TO_INT(156);
-		smc91x_resources[1].end = MSM_GPIO_TO_INT(156);
-	} else if (machine_is_qsd8x50_ffa() || machine_is_qsd8x50a_ffa()) {
-		smc91x_resources[0].start = 0x84000300;
-		smc91x_resources[0].end = 0x840003ff;
-		smc91x_resources[1].start = MSM_GPIO_TO_INT(87);
-		smc91x_resources[1].end = MSM_GPIO_TO_INT(87);
+	smc91x_resources[0].start = 0x70000300;
+	smc91x_resources[0].end = 0x700003ff;
+	smc91x_resources[1].start = INT_ES209RA_GPIO_ETHER;
+	smc91x_resources[1].end = INT_ES209RA_GPIO_ETHER;
 
-		rc = gpio_tlmm_config(GPIO_CFG(87, 0, GPIO_CFG_INPUT,
-					       GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA),
-					       GPIO_CFG_ENABLE);
-		if (rc) {
-			printk(KERN_ERR "%s: gpio_tlmm_config=%d\n",
-					__func__, rc);
-		}
-	} else
-		printk(KERN_ERR "%s: invalid machine type\n", __func__);
+	rc = gpio_tlmm_config(GPIO_CFG(107, 0, GPIO_INPUT,
+					       GPIO_PULL_DOWN, GPIO_2MA),
+					       GPIO_ENABLE);
+	if (rc) {
+		printk(KERN_ERR "%s: gpio_tlmm_config=%d\n",
+				__func__, rc);
+	}
 }
 #endif
 
@@ -2195,15 +2252,10 @@ msm_i2c_gpio_config(int iface, int config_type)
 }
 
 static struct msm_i2c_platform_data msm_i2c_pdata = {
-	//.clk_freq = 100000,
 	.clk_freq = 384000,
 	.rsl_id = SMEM_SPINLOCK_I2C,
 	.pri_clk = 95,
 	.pri_dat = 96,
-#if 0
-	.aux_clk = 60,
-	.aux_dat = 61,
-#endif
 	.msm_i2c_config_gpio = msm_i2c_gpio_config,
 };
 
@@ -2213,14 +2265,8 @@ static void __init msm_device_i2c_init(void)
 		pr_err("failed to request gpio i2c_pri_clk\n");
 	if (gpio_request(96, "i2c_pri_dat"))
 		pr_err("failed to request gpio i2c_pri_dat\n");
-#if 0
-	if (gpio_request(60, "i2c_sec_clk"))
-		pr_err("failed to request gpio i2c_sec_clk\n");
-	if (gpio_request(61, "i2c_sec_dat"))
-		pr_err("failed to request gpio i2c_sec_dat\n");
-#endif
 
-	msm_i2c_pdata.rmutex = 1;
+	msm_i2c_pdata.rmutex = (uint32_t)smem_alloc(SMEM_I2C_MUTEX, 8);
 	msm_i2c_pdata.pm_lat =
 		msm_pm_data[MSM_PM_SLEEP_MODE_POWER_COLLAPSE_NO_XO_SHUTDOWN]
 		.latency;

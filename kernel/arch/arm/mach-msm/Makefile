@@ -1,20 +1,6 @@
 obj-y += io.o dma.o memory.o
-ifdef CONFIG_MACH_ES209RA
-	obj-y += proc_comm.o
-	obj-y += vreg.o mpp.o
-	obj-y += vreg.o
-	obj-y += clock.o clock-pcom.o
-	obj-y += nand_partitions.o
-	obj-y += modem_notifier.o
-	obj-y += rpc_hsusb.o rpc_pmapp.o rpc_fsusb.o
-	obj-y += socinfo.o
-	obj-y += pmic.o
-	obj-y += internal_power_rail.o
-else
-	obj-y += clock.o
-	obj-y += modem_notifier.o
-endif
-
+obj-y += clock.o
+obj-y += modem_notifier.o
 obj-$(CONFIG_CPU_FREQ_MSM) += cpufreq.o
 obj-$(CONFIG_DEBUG_FS) += nohlt.o clock-debug.o
 
@@ -73,7 +59,6 @@ obj-$(CONFIG_MSM_SMD_QMI) += smd_qmi.o
 obj-$(CONFIG_MSM_SMD_PKT) += smd_pkt.o
 obj-$(CONFIG_MSM_SDIO_CTL) += sdio_ctl.o
 obj-$(CONFIG_MSM_SMD_NMEA) += smd_nmea.o
-obj-$(CONFIG_DEBUG_FS) += pmic_debugfs.o
 obj-$(CONFIG_MSM_RESET_MODEM) += reset_modem.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter.o
 obj-$(CONFIG_MSM_ONCRPCROUTER) += smd_rpcrouter_device.o
@@ -222,7 +207,6 @@ ifdef CONFIG_ARCH_MSM7X30
 	obj-$(CONFIG_SIMPLE_REMOTE_PLATFORM) += simple_remote_msm7x30_pf.o
 endif
 
-obj-$(CONFIG_SEMC_RPC_SERVER_HANDSET) += semc_rpc_server_handset.o
 obj-$(CONFIG_PMIC_TIME) += pmic_time.o
 
 obj-$(CONFIG_SEMC_MOGAMI_FELICA_SUPPORT) += semc_mogami_felica.o

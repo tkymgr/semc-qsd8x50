@@ -23,13 +23,9 @@
 #include <mach/msm_rpcrouter.h>
 
 #define PM_LIBPROG      0x30000061
-#if (CONFIG_MSM_AMSS_VERSION == 6220) || (CONFIG_MSM_AMSS_VERSION == 6225)
-#define PM_LIBVERS      0xfb837d0b
-#else
 #define PM_LIBVERS      0x10001
-#endif
 
-#define HTC_PROCEDURE_SET_VIB_ON_OFF	21
+#define HTC_PROCEDURE_SET_VIB_ON_OFF	22
 #define PMIC_VIBRATOR_LEVEL	(3000)
 
 static struct work_struct work_vibrator_on;
@@ -121,7 +117,7 @@ static struct timed_output_dev pmic_vibrator = {
 	.enable = vibrator_enable,
 };
 
-void __init msm_init_pmic_vibrator(void)
+static int __init msm_init_pmic_vibrator(void)
 {
 	INIT_WORK(&work_vibrator_on, pmic_vibrator_on);
 	INIT_WORK(&work_vibrator_off, pmic_vibrator_off);
@@ -129,8 +125,10 @@ void __init msm_init_pmic_vibrator(void)
 	hrtimer_init(&vibe_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	vibe_timer.function = vibrator_timer_func;
 
-	timed_output_dev_register(&pmic_vibrator);
+	return timed_output_dev_register(&pmic_vibrator);
 }
+
+arch_initcall(msm_init_pmic_vibrator);
 
 MODULE_DESCRIPTION("timed output pmic vibrator device");
 MODULE_LICENSE("GPL");

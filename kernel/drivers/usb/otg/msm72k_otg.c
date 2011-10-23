@@ -750,7 +750,11 @@ static int msm_otg_resume(struct msm_otg *dev)
 	/* pclk might be derived from peripheral bus clock. If so then
 	 * vote for max AXI frequency before enabling pclk.
 	 */
+#ifdef CONFIG_MACH_ES209RA
+	otg_pm_qos_update_axi(dev, 0);
+#else
 	otg_pm_qos_update_axi(dev, 1);
+#endif
 
 	if (dev->hs_pclk)
 		clk_enable(dev->hs_pclk);
@@ -2524,7 +2528,6 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 		ret = PTR_ERR(dev->hs_clk);
 		goto rpc_fail;
 	}
-
 	clk_set_rate(dev->hs_clk, 60000000);
 
 	if (!dev->pdata->usb_in_sps) {
@@ -2612,8 +2615,9 @@ static int __init msm_otg_probe(struct platform_device *pdev)
 					PM_QOS_DEFAULT_VALUE);
 	pm_qos_add_requirement(PM_QOS_SYSTEM_BUS_FREQ, DRIVER_NAME,
 					PM_QOS_DEFAULT_VALUE);
-
-#ifndef CONFIG_MACH_ES209RA
+#ifdef CONFIG_MACH_ES209RA
+	otg_pm_qos_update_axi(dev, 0);
+#else
 	otg_pm_qos_update_axi(dev, 1);
 #endif
 

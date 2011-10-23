@@ -15,7 +15,6 @@
  * 02110-1301, USA.
  *
  */
-#include <linux/kobject.h>
 #include <linux/platform_device.h>
 #include <linux/fb.h>
 #include <linux/file.h>
@@ -1743,9 +1742,6 @@ static int kgsl_register_dev(int num_devs)
 					MKDEV(MAJOR(kgsl_driver.dev_num), j));
 			goto error_device_create;
 		}
-//#ifdef CONFIG_MACH_ES209RA
-//		err = kobject_rename(&kgsl_driver.base_dev[i]->kobj,"kgsl");
-//#endif
 	}
 
 	/* add char dev(s) */
@@ -1999,8 +1995,10 @@ static int __devinit kgsl_platform_probe(struct platform_device *pdev)
 		goto done;
 	}
 done:
-	if (result)
+	if (result) {
 		kgsl_driver_cleanup();
+		KGSL_DRV_ERR("oops!!\n");
+	}
 	else
 		result = kgsl_register_dev(kgsl_driver.num_devs);
 

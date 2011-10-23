@@ -346,16 +346,13 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-			-Wno-unused-but-set-variable \
 			-Wno-array-bounds \
-			-Wno-cpp \
 			-Wno-uninitialized \
 			-Wno-deprecated-declarations \
 			-Wno-address \
 			-Wno-parentheses \
 			-Wno-unused-value \
 			-Wno-switch \
-			-Wno-enum-compare \
 			-Wno-unused-function \
 		   -fno-delete-null-pointer-checks
 KBUILD_AFLAGS   := -D__ASSEMBLY__

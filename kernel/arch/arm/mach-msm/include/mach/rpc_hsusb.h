@@ -25,6 +25,24 @@
 #include <mach/msm_otg.h>
 #include <mach/msm_hsusb.h>
 
+#if defined(CONFIG_SEMC_POWER) || \
+    defined(CONFIG_SEMC_POWER_MODULE) || \
+    defined(CONFIG_MAX17040_FUELGAUGE)
+enum semc_charger {
+	NO_CHARGER = 0,
+	USB_CHARGER,
+	WALL_CHARGER
+};
+
+typedef void (*usb_connect_status_callback_t) (enum semc_charger connected, uint32_t current_ma);
+
+void msm_chg_rpc_register_semc_callback(usb_connect_status_callback_t connect_status_fn);
+void msm_chg_rpc_unregister_semc_callback(void);
+void msm_chg_rpc_semc_get_usb_connected(enum semc_charger *connected, u16 *max_current);
+#endif /* CONFIG_SEMC_POWER ||
+	  CONFIG_SEMC_POWER_MODULE ||
+	  CONFIG_MAX17040_FUELGAUGE */
+
 #if defined(CONFIG_MSM_ONCRPCROUTER) && !defined(CONFIG_ARCH_MSM8X60)
 int msm_hsusb_rpc_connect(void);
 int msm_hsusb_phy_reset(void);
@@ -60,6 +78,15 @@ int msm_fsusb_rpc_close(void);
 int msm_fsusb_remote_dev_disconnected(void);
 int msm_fsusb_set_remote_wakeup(void);
 void msm_fsusb_rpc_deinit(void);
+
+#if defined(CONFIG_MACH_ES209RA)
+int msm_hsusb_chg_is_charging(void);
+int msm_chg_battery_thermo(void);
+int msm_chg_charger_current(void);
+int msm_chg_qsd_thermo(void);
+int msm_chg_charger_thermo(void);
+#endif /* CONFIG_MACH_ES209RA */
+
 #else
 static inline int msm_hsusb_rpc_connect(void) { return 0; }
 static inline int msm_hsusb_phy_reset(void) { return 0; }
