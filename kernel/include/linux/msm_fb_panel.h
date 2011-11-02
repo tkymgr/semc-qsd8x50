@@ -85,7 +85,9 @@ struct msm_panel_info {
 
 struct msm_fb_panel_data {
 	struct msm_panel_info panel_info;
+#ifdef CONFIG_MACH_ES209RA
 	struct panel_data_ext *panel_ext;
+#endif
 	void (*set_rect) (int x, int y, int xres, int yres);
 	void (*set_vsync_notifier) (msm_fb_vsync_handler_type, void *arg);
 	void (*set_backlight) (struct msm_fb_data_type *);

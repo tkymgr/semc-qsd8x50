@@ -342,18 +342,10 @@ LINUXINCLUDE    := -Iinclude \
 KBUILD_CPPFLAGS := -D__KERNEL__
 
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
-			-Werror \
+		   -Werror \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-			-Wno-array-bounds \
-			-Wno-uninitialized \
-			-Wno-deprecated-declarations \
-			-Wno-address \
-			-Wno-parentheses \
-			-Wno-unused-value \
-			-Wno-switch \
-			-Wno-unused-function \
 		   -fno-delete-null-pointer-checks
 KBUILD_AFLAGS   := -D__ASSEMBLY__
 

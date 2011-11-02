@@ -175,7 +175,7 @@ int msm_chg_rpc_connect(void)
 		pr_debug("%s: chg_ep already connected\n", __func__);
 		return 0;
 	}
-#ifndef CONFIG_MACH_ES209RA
+
 	chg_vers = 0x00040001;
 	if (!msm_chg_init_rpc(chg_vers))
 		goto chg_found;
@@ -183,7 +183,7 @@ int msm_chg_rpc_connect(void)
 	chg_vers = 0x00030001;
 	if (!msm_chg_init_rpc(chg_vers))
 		goto chg_found;
-#endif
+
 	chg_vers = 0x00020001;
 	if (!msm_chg_init_rpc(chg_vers))
 		goto chg_found;

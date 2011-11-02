@@ -108,7 +108,7 @@ config BATTERY_DA9030
 	  Say Y here to enable support for batteries charger integrated into
 	  DA9030 PMIC.
 
-config MAX17040_FUELGAUGE
+config BATTERY_MAX17040
 	tristate "Maxim MAX17040 Fuel Gauge"
 	depends on I2C
 	help
@@ -143,8 +143,8 @@ config BATTERY_MSM_FAKE
 	help
 	  Say Y to bypass actual battery queries.
 
-config BATTERY_ZEUS
-       tristate "Zeus Fuel-gauge"
+config BATTERY_X10_ZEUS
+       tristate "X10 and Zeus Fuel-gauge"
        depends on ARCH_MSM
        help
          Say Y to enable support for the fuel-gauge in Zeus

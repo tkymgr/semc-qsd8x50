@@ -79,6 +79,7 @@ static struct q6_hw_info q6_audio_hw[Q6_HW_COUNT] = {
 	},
 };
 
+#ifdef CONFIG_MACH_ES209RA
 struct q6_audio_gpios {
 	int aux_pcm_dout;
 };
@@ -89,7 +90,7 @@ void set_audio_gpios(int gpio)
 {
 	audio_gpios.aux_pcm_dout = gpio;
 }
-
+#endif
 static struct wake_lock wakelock;
 static struct wake_lock idlelock;
 static int idlecount;

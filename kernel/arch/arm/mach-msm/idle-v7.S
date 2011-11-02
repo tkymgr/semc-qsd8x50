@@ -26,6 +26,7 @@
 #define CPU_SAVED_STATE_SIZE (4 * 11 + 4 * 10)
 #endif
 
+#ifdef CONFIG_MACH_ES209RA
 ENTRY(get_predecode_repair_cache)
 	MRC    p15, 0, r0, c15, c15, 2    //; PVR0F2
 	bx      lr
@@ -34,6 +35,7 @@ ENTRY(set_predecode_repair_cache)
 	ORR    r1, r1, #0x10              //; enable bit 4
 	MCR    p15, 0, r1, c15, c15, 2    //; disable predecode repair cache
 	bx      lr
+#endif
 
 ENTRY(msm_arch_idle)
 	wfi

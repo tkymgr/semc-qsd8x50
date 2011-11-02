@@ -41,7 +41,6 @@ void analog_init(void)
 		gpio_set_value(GPIO_SPEAKER_AMP, 0);
 		gpio_set_value(GPIO_HEADSET_SHDN_N, 0);
 	} else {
-		// patched by tsuyo.kou
 		gpio_request(GPIO_HEADSET_AMP, NULL);
 		gpio_direction_output(GPIO_HEADSET_AMP, 1);
 		gpio_set_value(GPIO_HEADSET_AMP, 0);

@@ -24,17 +24,15 @@
 
 #include "devices.h"
 #include "gpio_hw.h"
-#include "smd_private.h"
 
 #include <asm/mach/flash.h>
 
 #include <asm/mach/mmc.h>
 #include <mach/msm_hsusb.h>
-#ifdef CONFIG_PMIC8058
-#include <linux/mfd/pmic8058.h>
-#endif
-
+#ifdef CONFIG_MACH_ES209RA
+#include "smd_private.h"
 #include <mach/msm_serial_hs.h>
+#endif
 
 static struct resource resources_uart1[] = {
 	{
@@ -130,11 +128,12 @@ static struct resource msm_uart1_dm_resources[] = {
 
 static u64 msm_uart_dm1_dma_mask = DMA_BIT_MASK(32);
 
+#ifdef CONFIG_MACH_ES209RA
 static struct msm_serial_hs_platform_data bt_uart_platform_data = {
 	.wakeup_irq = MSM_GPIO_TO_INT(44),
-	.wakeup_edge = IRQF_TRIGGER_RISING,
+	//.wakeup_edge = IRQF_TRIGGER_RISING,
 };
-
+#endif
 struct platform_device msm_device_uart_dm1 = {
 	.name = "msm_serial_hs",
 	.id = 0,
@@ -143,7 +142,9 @@ struct platform_device msm_device_uart_dm1 = {
 	.dev		= {
 		.dma_mask = &msm_uart_dm1_dma_mask,
 		.coherent_dma_mask = DMA_BIT_MASK(32),
+#ifdef CONFIG_MACH_ES209RA
 		.platform_data = &bt_uart_platform_data,
+#endif
 	},
 };
 
@@ -192,28 +193,6 @@ struct platform_device msm_device_uart_dm2 = {
 
 #define MSM_I2C_SIZE          SZ_4K
 #define MSM_I2C_PHYS          0xA9900000
-#define MSM_I2C_2_PHYS        0xA9900000
-#define INT_PWB_I2C_2         INT_PWB_I2C
-
-static struct resource resources_i2c_2[] = {
-	{
-		.start	= MSM_I2C_2_PHYS,
-		.end	= MSM_I2C_2_PHYS + MSM_I2C_SIZE - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	{
-		.start	= INT_PWB_I2C_2,
-		.end	= INT_PWB_I2C_2,
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-struct platform_device msm_device_i2c_2 = {
-	.name		= "msm_i2c",
-	.id		= 2,
-	.num_resources	= ARRAY_SIZE(resources_i2c_2),
-	.resource	= resources_i2c_2,
-};
 
 static struct resource resources_i2c[] = {
 	{
@@ -247,20 +226,6 @@ static struct resource resources_hsusb_otg[] = {
 		.end	= INT_USB_HS,
 		.flags	= IORESOURCE_IRQ,
 	},
-#ifdef CONFIG_PMIC8058
-	{
-		.name	= "vbus_interrupt",
-		.start	= MSM_GPIO_TO_INT(112),
-		.end	= MSM_GPIO_TO_INT(112),
-		.flags	= IORESOURCE_IRQ,
-	},
-	{
-		.name	= "id_interrupt",
-		.start	= MSM_GPIO_TO_INT(114),
-		.end	= MSM_GPIO_TO_INT(114),
-		.flags	= IORESOURCE_IRQ,
-	},
-#endif
 };
 
 static u64 dma_mask = 0xffffffffULL;
@@ -470,7 +435,9 @@ static struct resource resources_sdc1[] = {
 		.start	= INT_SDC1_0,
 		.end	= INT_SDC1_1,
 		.flags	= IORESOURCE_IRQ,
+#ifdef CONFIG_MACH_ES209RA
 		.name	= "irq",
+#endif
 	},
 	{
 		.start	= 8,
@@ -489,7 +456,9 @@ static struct resource resources_sdc2[] = {
 		.start	= INT_SDC2_0,
 		.end	= INT_SDC2_1,
 		.flags	= IORESOURCE_IRQ,
+#ifdef CONFIG_MACH_ES209RA
 		.name	= "irq",
+#endif
 	},
 	{
 		.start	= 8,
@@ -506,19 +475,8 @@ static struct resource resources_sdc3[] = {
 	},
 	{
 		.start	= INT_SDC3_0,
-		.end	= INT_SDC3_0,
-		.flags	= IORESOURCE_IRQ,
-		.name	= "cmd_irq",
-	},
-		{
-		.start	= INT_SDC3_1,
 		.end	= INT_SDC3_1,
 		.flags	= IORESOURCE_IRQ,
-		.name	= "pio_irq",
-	},
-	{
-		.flags	= IORESOURCE_IRQ | IORESOURCE_DISABLED,
-		.name	= "status_irq"
 	},
 	{
 		.start	= 8,
@@ -535,19 +493,8 @@ static struct resource resources_sdc4[] = {
 	},
 	{
 		.start	= INT_SDC4_0,
-		.end	= INT_SDC4_0,
-		.flags	= IORESOURCE_IRQ,
-		.name	= "cmd_irq",
-	},
-		{
-		.start	= INT_SDC4_1,
 		.end	= INT_SDC4_1,
 		.flags	= IORESOURCE_IRQ,
-		.name	= "pio_irq",
-	},
-	{
-		.flags	= IORESOURCE_IRQ | IORESOURCE_DISABLED,
-		.name	= "status_irq"
 	},
 	{
 		.start	= 8,
@@ -613,77 +560,6 @@ int __init msm_add_sdcc(unsigned int controller, struct mmc_platform_data *plat)
 	pdev = msm_sdcc_devices[controller-1];
 	pdev->dev.platform_data = plat;
 	return platform_device_register(pdev);
-}
-
-#define RAMFS_INFO_MAGICNUMBER		0x654D4D43
-#define RAMFS_INFO_VERSION		0x00000001
-#define RAMFS_MODEMSTORAGE_ID		0x4D454653
-
-static struct resource rmt_storage_resources[] = {
-       {
-		.flags  = IORESOURCE_MEM,
-       },
-};
-
-static struct platform_device rmt_storage_device = {
-       .name           = "rmt_storage",
-       .id             = -1,
-       .num_resources  = ARRAY_SIZE(rmt_storage_resources),
-       .resource       = rmt_storage_resources,
-};
-
-struct shared_ramfs_entry {
-	uint32_t client_id;   	/* Client id to uniquely identify a client */
-	uint32_t base_addr;	/* Base address of shared RAMFS memory */
-	uint32_t size;		/* Size of the shared RAMFS memory */
-	uint32_t reserved;	/* Reserved attribute for future use */
-};
-struct shared_ramfs_table {
-	uint32_t magic_id;  	/* Identify RAMFS details in SMEM */
-	uint32_t version;	/* Version of shared_ramfs_table */
-	uint32_t entries;	/* Total number of valid entries   */
-	struct shared_ramfs_entry ramfs_entry[3];	/* List all entries */
-};
-
-int __init rmt_storage_add_ramfs(void)
-{
-	struct shared_ramfs_table *ramfs_table;
-	struct shared_ramfs_entry *ramfs_entry;
-	int index;
-
-	ramfs_table = smem_alloc(SMEM_SEFS_INFO,
-			sizeof(struct shared_ramfs_table));
-
-	if (!ramfs_table) {
-		printk(KERN_WARNING "%s: No RAMFS table in SMEM\n", __func__);
-		return -ENOENT;
-	}
-
-	if ((ramfs_table->magic_id != (u32) RAMFS_INFO_MAGICNUMBER) ||
-		(ramfs_table->version != (u32) RAMFS_INFO_VERSION)) {
-		printk(KERN_WARNING "%s: Magic / Version mismatch:, "
-		       "magic_id=%#x, format_version=%#x\n", __func__,
-		       ramfs_table->magic_id, ramfs_table->version);
-		return -ENOENT;
-	}
-
-	for (index = 0; index < ramfs_table->entries; index++) {
-		ramfs_entry = &ramfs_table->ramfs_entry[index];
-
-		/* Find a match for the Modem Storage RAMFS area */
-		if (ramfs_entry->client_id == (u32) RAMFS_MODEMSTORAGE_ID) {
-			printk(KERN_INFO "%s: RAMFS Info (from SMEM): "
-				"Baseaddr = 0x%08x, Size = 0x%08x\n", __func__,
-				ramfs_entry->base_addr, ramfs_entry->size);
-
-			rmt_storage_resources[0].start = ramfs_entry->base_addr;
-			rmt_storage_resources[0].end = ramfs_entry->base_addr +
-							ramfs_entry->size - 1;
-			platform_device_register(&rmt_storage_device);
-			return 0;
-		}
-	}
-	return -ENOENT;
 }
 
 #if defined(CONFIG_FB_MSM_MDP40)
@@ -788,11 +664,12 @@ static struct platform_device msm_lcdc_device = {
 	.id     = 0,
 };
 
+#ifdef CONFIG_MACH_ES209RA
 static struct platform_device msm_dtv_device = {
 	.name   = "dtv",
 	.id     = 0,
 };
-
+#endif
 static struct platform_device msm_tvenc_device = {
 	.name   = "tvenc",
 	.id     = 0,
@@ -908,28 +785,6 @@ struct platform_device msm_device_tssc = {
 	.resource = resources_tssc,
 };
 
-#ifdef CONFIG_MSM_ROTATOR
-static struct resource resources_msm_rotator[] = {
-	{
-		.start	= 0xA3E00000,
-		.end	= 0xA3F00000 - 1,
-		.flags	= IORESOURCE_MEM,
-	},
-	{
-		.start	= INT_ROTATOR,
-		.end	= INT_ROTATOR,
-		.flags	= IORESOURCE_IRQ,
-	},
-};
-
-struct platform_device msm_rotator_device = {
-	.name		= "msm_rotator",
-	.id		= 0,
-	.num_resources  = ARRAY_SIZE(resources_msm_rotator),
-	.resource       = resources_msm_rotator,
-};
-#endif
-
 static void __init msm_register_device(struct platform_device *pdev, void *data)
 {
 	int ret;
@@ -957,8 +812,10 @@ void __init msm_fb_register_device(char *name, void *data)
 		msm_register_device(&msm_tvenc_device, data);
 	else if (!strncmp(name, "lcdc", 4))
 		msm_register_device(&msm_lcdc_device, data);
+#ifdef CONFIG_MACH_ES209RA
 	else if (!strncmp(name, "dtv", 3))
 		msm_register_device(&msm_dtv_device, data);
+#endif
 	else
 		printk(KERN_ERR "%s: unknown device! %s\n", __func__, name);
 }
@@ -995,7 +852,11 @@ struct clk msm_clocks_8x50[] = {
 	CLK_PCOM("mdp_clk",	MDP_CLK,	NULL, OFF),
 	CLK_PCOM("mdp_lcdc_pclk_clk", MDP_LCDC_PCLK_CLK, NULL, 0),
 	CLK_PCOM("mdp_lcdc_pad_pclk_clk", MDP_LCDC_PAD_PCLK_CLK, NULL, 0),
+#ifdef CONFIG_MACH_ES209RA
 	CLK_PCOM("mdp_vsync_clk",	MDP_VSYNC_CLK,	NULL, 0),
+#else
+	CLK_PCOM("mdp_vsync_clk",	MDP_VSYNC_CLK,	NULL, OFF),
+#endif
 	CLK_PCOM("pbus_clk",	PBUS_CLK,	NULL, CLK_MIN),
 	CLK_PCOM("pcm_clk",	PCM_CLK,	NULL, 0),
 	CLK_PCOM("sdac_clk",	SDAC_CLK,	NULL, OFF),

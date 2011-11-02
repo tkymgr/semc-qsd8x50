@@ -653,9 +653,7 @@ static int kgsl_yamato_start(struct kgsl_device *device)
 
 	/* Turn the clocks on before the power.  Required for some platforms,
 	   has no adverse effect on the others */
-//#ifndef CONFIG_MACH_ES209RA
 	kgsl_pwrctrl(KGSL_PWRFLAGS_YAMATO_CLK_ON);
-//#endif
 	kgsl_pwrctrl(KGSL_PWRFLAGS_YAMATO_POWER_ON);
 
 	kgsl_driver.is_suspended = KGSL_FALSE;

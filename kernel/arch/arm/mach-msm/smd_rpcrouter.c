@@ -47,7 +47,9 @@
 #include "smd_rpcrouter.h"
 #include "modem_notifier.h"
 #include "smd_rpc_sym.h"
+#ifdef CONFIG_MACH_ES209RA
 #include "smd_private.h"
+#endif
 
 enum {
 	SMEM_LOG = 1U << 0,
@@ -1094,7 +1096,7 @@ static void do_read_data(struct work_struct *work)
 packet_complete:
 	spin_lock_irqsave(&ept->read_q_lock, flags);
 	D("%s: take read lock on ept %p\n", __func__, ept);
-	wake_lock(&ept->read_q_wake_lock);
+	wake_lock_timeout(&ept->read_q_wake_lock, HZ*10);
 	list_add_tail(&pkt->list, &ept->read_q);
 	wake_up(&ept->wait_q);
 	spin_unlock_irqrestore(&ept->read_q_lock, flags);
@@ -2288,6 +2290,7 @@ void msm_rpcrouter_xprt_notify(struct rpcrouter_xprt *xprt, unsigned event)
 #ifdef CONFIG_MACH_ES209RA
 	union rr_control_msg msg = { 0 }; 
 #endif
+
 	/* TODO: need to close the transport upon close event */
 	if (event == RPCROUTER_XPRT_EVENT_OPEN)
 		msm_rpcrouter_add_xprt(xprt);

@@ -1995,10 +1995,8 @@ static int __devinit kgsl_platform_probe(struct platform_device *pdev)
 		goto done;
 	}
 done:
-	if (result) {
+	if (result)
 		kgsl_driver_cleanup();
-		KGSL_DRV_ERR("oops!!\n");
-	}
 	else
 		result = kgsl_register_dev(kgsl_driver.num_devs);
 

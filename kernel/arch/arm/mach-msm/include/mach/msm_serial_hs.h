@@ -21,14 +21,6 @@
  * Used to configure low power wakeup */
 struct msm_serial_hs_platform_data {
 	int wakeup_irq;  /* wakeup irq */
-	int wakeup_edge; /* wakeup irq edge */
-
-	/* for some UARTs, we don't have to ignore the first wakeup interrupt */
-	int wakeup_ignore_not_needed;
-
-	void (*early_suspend)(struct uart_port *uport);
-	void (*late_resume)(struct uart_port *uport);
-
 	/* bool: inject char into rx tty on wakeup */
 	unsigned char inject_rx_on_wakeup;
 	char rx_to_inject;
